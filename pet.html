@@ -10,6 +10,34 @@
   img { position: absolute; inset: 0; width: 100%; height: 100%;
         image-rendering: pixelated; display: none; pointer-events: none; }
   img.on { display: block; }
+
+  /* ---------- 状态动效 ----------
+     素材是静态帧，"换个动作"如果只是换一张静止图，肉眼几乎看不出变化（用户实测反馈）。
+     这里按状态给 img 加 transform 动画，让每个动作真的"动起来"。
+     一次性动作（欢呼/捧爱心）用 infinite 循环，靠保持期到点切走，避免每次重播的 hack。 */
+  @keyframes kb-type    { 0%,100% { transform: translateY(0) }      50% { transform: translateY(-3.5%) } }
+  @keyframes kb-hop     { 0%,100% { transform: translateY(0) }      45% { transform: translateY(-11%) } }
+  @keyframes kb-breathe { 0%,100% { transform: scale(1) }           50% { transform: scale(1.035) } }
+  @keyframes kb-sway    { 0%,100% { transform: translateX(-2.5%) rotate(-2deg) } 50% { transform: translateX(2.5%) rotate(2deg) } }
+  @keyframes kb-float   { 0%,100% { transform: translateY(0) }      50% { transform: translateY(-4.5%) } }
+  @keyframes kb-nod     { 0%,100% { transform: translateY(0) rotate(0deg) }     50% { transform: translateY(2.5%) rotate(4deg) } }
+  @keyframes kb-dangle  { 0%,100% { transform: rotate(-5deg) }      50% { transform: rotate(5deg) } }
+  @keyframes kb-wiggle  { 0%,100% { transform: translateX(0) }      50% { transform: translateX(-2.5%) } }
+
+  body[data-state="typing_laptop"]   img { animation: kb-type    .34s ease-in-out infinite; }
+  body[data-state="cheering"]        img { animation: kb-hop     .3s  ease-out    infinite; }
+  body[data-state="offering_heart"]  img { animation: kb-hop     .42s ease-out    infinite; }
+  body[data-state="sleeping"]        img { animation: kb-breathe 3.2s ease-in-out infinite; }
+  body[data-state="nodding_off"]     img { animation: kb-nod     1.5s ease-in-out infinite; }
+  body[data-state="spacing_out"]     img { animation: kb-breathe 4s   ease-in-out infinite; }
+  body[data-state="walking"]         img { animation: kb-sway    .9s  ease-in-out infinite; }
+  body[data-state="fast_running"]    img { animation: kb-sway    .38s ease-in-out infinite; }
+  body[data-state="picked_up"]       img { animation: kb-dangle  .7s  ease-in-out infinite; }
+  body[data-state="hot_spring"]      img { animation: kb-float   2.4s ease-in-out infinite; }
+  body[data-state="orange_balancing"] img { animation: kb-float  1.5s ease-in-out infinite; }
+  body[data-state="drinking_coffee"] img { animation: kb-wiggle  1.1s ease-in-out infinite; }
+  body[data-state="munching_clover"] img { animation: kb-wiggle  .65s ease-in-out infinite; }
+  body[data-state="eating_orange"]   img { animation: kb-wiggle  .8s  ease-in-out infinite; }
 </style>
 </head>
 <body>
@@ -76,7 +104,11 @@ function frameName() {
   mode = 'idle';
   return look;
 }
-function render() { img.src = FRAME_SRC[frameName()]; }
+function render() {
+  const k = frameName();
+  if (document.body.dataset.state !== k) document.body.dataset.state = k;   // 驱动状态动效
+  img.src = FRAME_SRC[k];
+}
 
 /* ---------- 鼠标朝向 + 空闲检测（主进程 120ms 推送全局光标） ---------- */
 window.buddy.onCursor(({ mx, my, px, py }) => {
@@ -184,7 +216,7 @@ setInterval(() => {
 // 否则卡皮巴拉会一直打工、错过欢呼（实测踩到）。typing_laptop 时长即"最长打工"上限，兜底 pi 异常未发 settled。
 const EVENT_ANIM = {
   typing_laptop:  [120000, 2],
-  cheering:       [1800, 3],
+  cheering:       [3500, 3],
   offering_heart: [1600, 2],
   sleeping:       [3000, 2],
 };
