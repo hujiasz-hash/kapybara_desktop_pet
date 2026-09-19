@@ -197,7 +197,8 @@ function createPetWindow() {
   });
   petWin.setAlwaysOnTop(true, 'floating');
   if (isMac) petWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  petWin.loadFile(path.join(__dirname, 'pet.html'));
+  petWin.loadFile(path.join(__dirname, 'pet.html'),
+    process.env.GB_FAST ? { query: { fast: '1' } } : undefined);
 
   // 初始位置：主屏右上角
   const wa = screen.getPrimaryDisplay().workArea;
@@ -205,6 +206,9 @@ function createPetWindow() {
   console.log(`[gemini-buddy] pet 初始=(${wa.x + wa.width - 130}, ${wa.y + 70}) workArea=${wa.width}x${wa.height}+${wa.x}+${wa.y}`);
   petWin.webContents.on('console-message', (_e, _lvl, msg) => {
     fs.appendFileSync('/tmp/pet-debug.log', `[${_lvl}] ${msg}\n`);
+  });
+  petWin.webContents.on('console-message', (_e, level, msg, line, src) => {
+    if (level >= 2 || msg.includes('[pet]')) console.log(`[pet-console:${level}] ${msg} (${src.split('/').pop()}:${line})`);
   });
   petWin.showInactive();         // 显示但不夺焦点
   petWin.on('move', absorbPetDragCorrection);

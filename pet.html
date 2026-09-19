@@ -14,7 +14,7 @@
 </head>
 <body>
 <script>
-/* ---------- 帧库（18 动作，420x420，已预缩放） ---------- */
+/* ---------- 帧库（18 动作，420x420） ---------- */
 const FRAME_FILES = {
   front:    'frame_01_idle_front.png',
   left:     'frame_02_look_left.png',
@@ -35,115 +35,167 @@ const FRAME_FILES = {
   munching_clover: 'frame_17_munching_clover.png',
   eating_orange: 'frame_18_eating_orange.png',
 };
-const FRAME_SRC = {};
 const img = document.createElement('img');
 img.className = 'on';
 document.body.appendChild(img);
+const FRAME_SRC = {};
 for (const [key, file] of Object.entries(FRAME_FILES)) {
-  const pre = new Image();
-  pre.src = 'ui/frames/' + file;      // 预热缓存
+  new Image().src = 'ui/frames/' + file;              // 预热
   FRAME_SRC[key] = 'ui/frames/' + file;
 }
 
-/* ---------- 帧状态机 ----------
-   优先级：拖动(提溜) > 事件行为(欢呼/爱心) > 随机行为 > 朝向idle */
-let mode = 'idle';        // idle | <行为键名> | dragged
-let look = 'front';       // front | left | right | up
-let holdUntil = 0;        // 行为保持截止时间戳
-let eventHoldUntil = 0;   // 事件动画保持截止
+/* ---------- 节奏参数（?fast=1 测试用短阈值） ---------- */
+const FAST = new URLSearchParams(location.search).has('fast');
+const NOD_AFTER   = (FAST ? 3 : 15) * 1000;   // 鼠标静止 15s → 打瞌睡
+const SLEEP_AFTER = (FAST ? 6 : 30) * 1000;   // 静止 30s → 趴下睡死
+
+/* ---------- 状态机 ----------
+   优先级：拖动(提溜) > 事件动画(欢呼/爱心) > 睡意(鼠标空闲) > 随机行为 > 朝向idle
+   鼠标一动就重新计时并立刻醒来 */
+let mode = 'idle';            // idle | nodding | sleeping | <行为键> | dragged
+let look = 'front';
+let eventHoldUntil = 0;       // 事件动画保持
+let behaviorHoldUntil = 0;    // 随机行为保持
+let nextBehaviorAt = Date.now() + 3500 + Math.random() * 3500;
+let lastMouse = { x: -1, y: -1 };
+let lastActivity = Date.now();
+const dragged = () => mode === 'dragged';
+const busyNow = () => dragged() || Date.now() < eventHoldUntil;
 
 function frameName() {
+  if (dragged) return 'picked_up';
   const now = Date.now();
-  if (mode === 'dragged') return 'picked_up';
-  if (now < eventHoldUntil) return mode;      // 事件动画
-  if (now < holdUntil) return mode;           // 随机行为
+  if (now < eventHoldUntil) return mode;
+  if (mode === 'sleeping') return 'sleeping';
+  if (mode === 'nodding') return 'nodding_off';
+  if (now < behaviorHoldUntil) return mode;
   mode = 'idle';
   return look;
 }
 function render() { img.src = FRAME_SRC[frameName()]; }
 
-/* ---------- 主进程事件：答完欢呼 / 打开问答送爱心 ---------- */
-window.buddy.onPetEvent((e) => {
-  const now = Date.now();
-  if (now < eventHoldUntil) return;           // 不打断进行中的事件动画
-  if (e === 'cheer') { mode = 'cheering'; eventHoldUntil = now + 1500; }
-  else if (e === 'greet') { mode = 'offering_heart'; eventHoldUntil = now + 1500; }
-  render();
-});
-
-/* ---------- 鼠标朝向（idle 时生效） ---------- */
+/* ---------- 鼠标朝向 + 空闲检测（主进程 120ms 推送全局光标） ---------- */
 window.buddy.onCursor(({ mx, my, px, py }) => {
-  const now = Date.now();
-  if (now < holdUntil || now < eventHoldUntil || mode === 'dragged') return;
-  const cx = px + 55, cy = py + 55;
-  const dx = mx - cx, dy = my - cy;
-  let want = 'front';
-  if (dx < -55) want = 'left';
-  else if (dx > 55) want = 'right';
-  else if (dy < -75) want = 'up';
-  if (want !== look) { look = want; render(); }
+  const moved = mx !== lastMouse.x || my !== lastMouse.y;
+  lastMouse = { x: mx, y: my };
+  if (moved) {
+    lastActivity = Date.now();
+    if (mode === 'sleeping' || mode === 'nodding') wake();     // 鼠标一动就醒
+  }
+  if (mode === 'idle') {                                        // 朝向跟随
+    const cx = px + 55, cy = py + 55;
+    const dx = mx - cx, dy = my - cy;
+    let want = 'front';
+    if (dx < -55) want = 'left';
+    else if (dx > 55) want = 'right';
+    else if (dy < -75) want = 'up';
+    if (want !== look) { look = want; render(); }
+  }
 });
 
-/* ---------- 随机行为池（键, 时长ms, 权重, 连招下一帧） ---------- */
-const BEHAVIORS = [
+function wake() {
+  mode = 'cheering';                       // 醒来先伸个懒腰（欢呼帧代替）
+  render();
+  setTimeout(() => {
+    if (mode === 'cheering') { mode = 'idle'; look = 'front'; render(); }
+  }, 900);
+  lastActivity = Date.now();
+  behaviorHoldUntil = Date.now() + 3000;
+  nextBehaviorAt = Date.now() + 3500 + Math.random() * 3500;
+}
+
+/* ---------- 活跃期随机行为池 ---------- */
+const IDLE_BEHAVIORS = [
   ['walking',         3000, 3, null],
   ['fast_running',    2000, 1, null],
-  ['nodding_off',     3200, 2, 'sleeping'],      // 打瞌睡 → 趴下睡死
-  ['spacing_out',     4000, 2, null],
-  ['orange_balancing',2500, 2, null],
   ['munching_clover', 3000, 2, null],
   ['eating_orange',   3000, 2, null],
-  ['drinking_coffee', 2500, 1, 'typing_laptop'],  // 咖啡续命 → 打工
-  ['typing_laptop',   5000, 1, null],
-  ['hot_spring',      8000, 1, null],
+  ['spacing_out',     3500, 2, null],
+  ['orange_balancing',2500, 2, null],
+  ['drinking_coffee', 2500, 1, 'typing_laptop'],   // 咖啡续命 → 打工
+  ['typing_laptop',   4500, 1, null],
+  ['hot_spring',      6000, 0.5, null],            // 彩蛋级
 ];
-const CHAIN_DUR = { sleeping: 6000, typing_laptop: 5000 };
+const CHAIN_DUR = { typing_laptop: 4500 };
 function weightedPick() {
-  const total = BEHAVIORS.reduce((s, b) => s + b[2], 0);
+  const total = IDLE_BEHAVIORS.reduce((s, b) => s + b[2], 0);
   let r = Math.random() * total;
-  for (const b of BEHAVIORS) { if ((r -= b[2]) < 0) return b; }
-  return BEHAVIORS[0];
+  for (const b of IDLE_BEHAVIORS) { if ((r -= b[2]) < 0) return b; }
+  return IDLE_BEHAVIORS[0];
 }
-function scheduleBehavior() {
-  setTimeout(() => {
-    if (mode === 'idle' && Date.now() >= eventHoldUntil) {
+
+/* ---------- 主循环（500ms tick） ---------- */
+setInterval(() => {
+  const now = Date.now();
+  if (dragged() || now < eventHoldUntil) return;
+
+  const idleMs = now - lastActivity;
+  if (idleMs > SLEEP_AFTER) {                       // 睡死
+    if (mode !== 'sleeping') { mode = 'sleeping'; render(); }
+    return;
+  }
+  if (idleMs > NOD_AFTER) {                         // 打瞌睡
+    if (mode !== 'nodding') { mode = 'nodding'; render(); }
+    return;
+  }
+  // 活跃期：随机行为
+  if (now >= behaviorHoldUntil) {
+    if (mode !== 'idle') { mode = 'idle'; render(); }
+    if (now >= nextBehaviorAt) {
       const [name, dur, _w, chain] = weightedPick();
       mode = name;
-      holdUntil = Date.now() + dur;
+      behaviorHoldUntil = now + dur;
+      nextBehaviorAt = behaviorHoldUntil + 3500 + Math.random() * 4000;
       render();
       if (chain) {
         setTimeout(() => {
-          if (mode === name) {            // 中途没被打断才接连招
+          if (mode === name) {
             mode = chain;
-            holdUntil = Date.now() + CHAIN_DUR[chain];
+            behaviorHoldUntil = Date.now() + CHAIN_DUR[chain];
             render();
           }
         }, dur);
       }
     }
-    scheduleBehavior();
-  }, 4000 + Math.random() * 7000);
-}
-scheduleBehavior();
+  }
+}, 500);
 
-/* ---------- 拖动：被提溜起来 ---------- */
+/* ---------- 事件：答完欢呼 / 打开问答送爱心 ---------- */
+window.buddy.onPetEvent((e) => {
+  const now = Date.now();
+  if (now < eventHoldUntil) return;
+  if (e === 'cheer') {
+    mode = 'cheering';
+    eventHoldUntil = now + 1500;
+    lastActivity = now;
+  } else if (e === 'greet') {
+    mode = 'offering_heart';
+    eventHoldUntil = now + 1500;
+    lastActivity = now;
+  }
+  render();
+});
+
+/* ---------- 拖动：被提溜（拖动全程算活动，不会睡着） ---------- */
 let down = null, dragging = false;
 document.addEventListener('mousedown', (e) => {
   down = { x: e.clientX, y: e.clientY };
   dragging = false;
+  lastActivity = Date.now();
   window.buddy.petDragStart(e.screenX, e.screenY);
 });
 document.addEventListener('mousemove', (e) => {
+  lastActivity = Date.now();
   if (!down) return;
-  const dx = e.clientX - down.x, dy = e.clientY - down.y;
-  if (dragging || Math.hypot(dx, dy) > 5) {
+  const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+  if (dragging || moved > 5) {
     if (!dragging) { dragging = true; mode = 'dragged'; render(); }
     window.buddy.petDragMove(e.screenX, e.screenY);
   }
 });
 document.addEventListener('mouseup', () => {
   if (down && !dragging) window.buddy.petClick();
-  if (dragging) { mode = 'idle'; render(); }
+  if (dragging) { mode = 'idle'; look = 'front'; render(); }
   window.buddy.petDragEnd();
   down = null;
   dragging = false;
