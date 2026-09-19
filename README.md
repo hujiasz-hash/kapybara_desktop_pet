@@ -1,6 +1,6 @@
 ---
 title: gemini-buddy 使用说明
-version: v0.1
+version: v0.2
 author: 胡嘉
 date: 2026-09-19
 ---
@@ -10,7 +10,8 @@ date: 2026-09-19
 ## 版本
 | 版本 | 日期 | 作者 | 改动点 |
 | --- | --- | --- | --- |
-| v0.1 | 2026-09-19 | 胡嘉 | 首版：Option+G 呼出的 Gemini 桌面快速问答小窗（Electron） |
+| v0.1 | 2026-09-19 | 胡嘉 | 首版：Option+G 呼出的 Gemini 桌面小窗（Electron 内嵌网页） |
+| v0.2 | 2026-09-19 | 胡嘉 | 轻量重构：tkinter 浮窗 + Antigravity CLI（agy）问答，去掉 Electron；新增失焦自动隐藏 |
 
 ## 链接
 - 无
@@ -19,50 +20,55 @@ date: 2026-09-19
 
 ## 是什么
 
-按 `Option+G` 呼出一个置顶小窗，里面就是 Gemini 网页。直接打字提问，回答显示在窗口里；再按 `Option+G` 或 `Esc` 隐藏。登录态持久保存，登录一次以后免登录。
+按 `Option+G` 呼出一个置顶小浮窗，打字提问回车，后台调用 Antigravity CLI（`agy`，复用你的 Google 账号登录态，免 API key），回答直接显示在窗口里。点窗口外任意地方自动隐藏；回答还在生成时先不藏，答完弹在屏幕上（不抢键盘焦点）。
 
-## 启动
+内存占用约 50MB，无 node_modules。
+
+## 启动 / 停止
 
 ```bash
 cd ~/Desktop/Working/2026-09_gemini-buddy
-npm start
+./start.sh        # 后台启动（日志: ~/.gemini-buddy.log）
+./start.sh stop   # 停止
+./start.sh log    # 看日志
 ```
-
-启动后没有窗口、不占 Dock，常驻后台，随时 `Option+G` 呼出。
-
-## 首次使用（只需一次）
-
-1. `Option+G` 呼出窗口，显示 Gemini 落地页
-2. 点右上角 Sign in，登录你的 Google 账号（登录态存在本应用独立 session，不影响 Chrome）
-3. 登录后自动进入对话页，以后呼出直接可用
 
 ## 快捷键与交互
 
 | 操作 | 效果 |
 | --- | --- |
-| `Option+G` | 呼出 / 隐藏窗口，呼出后焦点自动落到 Gemini 输入框 |
-| `Esc` | 输入框为空时隐藏窗口；有内容时放行给页面（如停止生成） |
-| 窗口顶部左侧 | 按住可拖动窗口位置（记忆在本次会话内） |
-| `Cmd+Q`（窗口聚焦时） | 退出应用 |
+| `Option+G` | 呼出 / 隐藏，呼出后直接打字 |
+| `回车` | 发送问题，回答追加在窗口内（保留历史问答） |
+| `Esc` | 关闭窗口 |
+| 点窗口外 | 自动隐藏（回答生成中除外，答完再显示） |
+| 窗口顶部 | 按住拖动位置 |
 
-窗口出现在鼠标当前所在的屏幕，居中偏上。
+窗口出现在鼠标当前所在屏幕，居中偏上。每次提问是独立会话（无上下文）。
 
-## 配置（都在 main.js 顶部）
+## 依赖（本机已全部就绪）
+
+- `python3` + tkinter（系统自带）
+- `pynput`（全局快捷键，已装 v1.8.1）
+- `agy`（Antigravity CLI v1.2.3，`~/.local/bin/agy`，已 Google 账号登录）
+
+pynput 快捷键需要辅助功能授权：若 `Option+G` 无反应，到「系统设置 → 隐私与安全性 → 辅助功能」给运行脚本的终端勾选。
+
+## 配置（buddy.py 顶部）
 
 | 常量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `TOGGLE_ACCELERATOR` | `Option+G` | 呼出快捷键，被占用时改这里（如 `Cmd+Alt+G`） |
-| `WIN_WIDTH` / `WIN_HEIGHT` | 760 / 680 | 窗口尺寸 |
+| `HOTKEY` | `'<alt>+g'` | 全局快捷键，pynput 格式 |
+| `WIN_W / WIN_H` | 640 / 440 | 窗口尺寸 |
+| `ANSWER_TIMEOUT` | 180 | 单次回答超时（秒） |
 
-## 网络
-
-默认走系统代理。若需强制代理：
+## 自动化测试
 
 ```bash
-GB_PROXY=http://127.0.0.1:7898 npm start
+python3 buddy.py --test "2的10次方等于几？只回答数字"
 ```
 
-## 技术栈
+建 UI → 发问题 → 等 agy 回答 → 打印回答区内容后退出。
 
-- Electron：全局快捷键 + 无边框置顶窗口 + `persist:gemini` 持久 session
-- 不调用 API key，直接内嵌 gemini.google.com 网页
+## 历史
+
+- v0.1 为 Electron 内嵌 gemini.google.com 网页方案（commit 7d4ffba），因占用高（~300MB）退役；git 历史可随时找回（`git checkout 7d4ffba -- main.js package.json`）。
