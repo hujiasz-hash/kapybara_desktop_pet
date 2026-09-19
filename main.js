@@ -4,7 +4,7 @@
  * - 桌面常驻卡皮巴拉（不占焦点、置顶、可拖动），点击它弹出问答窗
  * - Option+G (mac) / Alt+G (Win) 同样呼出/隐藏问答窗
  * - 卡皮巴拉朝向跟随鼠标（左看/右看/抬头看橘子/呆立），随机踱步、打盹
- * - 后端自动选择：pollinations（零 key 免费网关，快）/ agy（GB_BACKEND=agy，需登录）
+ * - 后端自动选择：pollinations（零 key 免费网关，快）/ agy（KB_BACKEND=agy，需登录）
  */
 const { app, BrowserWindow, globalShortcut, ipcMain, screen, Notification } = require('electron');
 const { spawn, execSync } = require('child_process');
@@ -20,7 +20,7 @@ const CHAT_H = 400;
 const PET_SIZE = 110;
 const ANSWER_TIMEOUT_MS = 180000;
 // agy 思考档位：low 最快；置空则用 agy 默认
-const AGY_MODEL = process.env.GB_AGY_MODEL || 'gemini-3.8-flash-low';
+const AGY_MODEL = process.env.KB_AGY_MODEL || 'gemini-3.8-flash-low';
 
 let chatWin = null;    // 问答浮窗
 let petWin = null;     // 桌面宠物（常驻）
@@ -28,15 +28,15 @@ let busy = false;
 let childProc = null;
 
 // 可选代理（须在 app ready 前）
-if (process.env.GB_PROXY) {
-  app.commandLine.appendSwitch('proxy-server', process.env.GB_PROXY);
+if (process.env.KB_PROXY) {
+  app.commandLine.appendSwitch('proxy-server', process.env.KB_PROXY);
 }
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
 // ---------- 后端选择 ----------
-// 默认 pollinations（零注册零 key，1~2 秒）；GB_BACKEND=agy 用 Antigravity CLI（质量更好）
-const BACKEND = process.env.GB_BACKEND || 'pollinations';
+// 默认 pollinations（零注册零 key，1~2 秒）；KB_BACKEND=agy 用 Antigravity CLI（质量更好）
+const BACKEND = process.env.KB_BACKEND || 'pollinations';
 
 // ---------- pollinations：免费无 key，GET 即返回文本 ----------
 async function runPollinations(question) {
@@ -199,13 +199,13 @@ function createPetWindow() {
   petWin.setAlwaysOnTop(true, 'floating');
   if (isMac) petWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   petWin.loadFile(path.join(__dirname, 'pet.html'),
-    process.env.GB_FAST ? { query: { fast: '1' } } : undefined);
+    process.env.KB_FAST ? { query: { fast: '1' } } : undefined);
 
   // 初始位置：主屏右上角
   const wa = screen.getPrimaryDisplay().workArea;
   const initX = wa.x + wa.width - 130, initY = wa.y + 70;
   petWin.setPosition(initX, initY);
-  console.log(`[gemini-buddy] pet 初始=(${initX}, ${initY}) workArea=${wa.width}x${wa.height}+${wa.x}+${wa.y}`);
+  console.log(`[kapybara-buddy] pet 初始=(${initX}, ${initY}) workArea=${wa.width}x${wa.height}+${wa.x}+${wa.y}`);
   // 预学系统真实右边界：初始位置若被系统弹回（台前调度条），用弹回结果学边界，
   // 之后拖动从第一帧起就 clamp 在真实边界内，不会"闪进去再弹回"
   setTimeout(() => {
@@ -213,7 +213,7 @@ function createPetWindow() {
     const [ax] = petWin.getPosition();
     if (ax < initX - 5) {
       petLimit = { minX: -1e9, maxX: ax };
-      console.log(`[gemini-buddy] 台前调度右边界预学: maxX=${ax}`);
+      console.log(`[kapybara-buddy] 台前调度右边界预学: maxX=${ax}`);
     }
   }, 400);
   // 拖动中被系统弹回（台前调度条等）→ 学习真实边界，后续帧 clamp 收紧不再进入
@@ -314,7 +314,7 @@ app.whenReady().then(() => {
 
   createPetWindow();   // 常驻宠物
   createChatWindow();  // 预加载问答窗，呼出即达
-  console.log(`[gemini-buddy] 后端: ${BACKEND}` + (BACKEND === 'agy' ? ` (${findAgy() || '未找到!'})` : ' (免费网关，约1~2秒)'));
+  console.log(`[kapybara-buddy] 后端: ${BACKEND}` + (BACKEND === 'agy' ? ` (${findAgy() || '未找到!'})` : ' (免费网关，约1~2秒)'));
 
   const ok = globalShortcut.register(HOTKEY, toggleChat);
   if (!ok) {
@@ -324,7 +324,7 @@ app.whenReady().then(() => {
     }).show();
   }
 
-  if (process.env.GB_PET_DEBUG) {
+  if (process.env.KB_PET_DEBUG) {
     setInterval(async () => {
       if (petWin && !petWin.isDestroyed()) {
         const st = await petWin.webContents.executeJavaScript('window.__petState ? window.__petState() : "no fn"').catch(e => 'err ' + e.message);
@@ -349,16 +349,16 @@ app.whenReady().then(() => {
     }
   }, 120);
 
-  // 自动化测试：GB_TEST_ASK="问题"（GB_TEST_ASK2 第二问验证覆盖）
-  if (process.env.GB_TEST_ASK !== undefined && !process.env.GB_DEBUG_SHOT) {
-    const q = process.env.GB_TEST_ASK;
+  // 自动化测试：KB_TEST_ASK="问题"（KB_TEST_ASK2 第二问验证覆盖）
+  if (process.env.KB_TEST_ASK !== undefined && !process.env.KB_DEBUG_SHOT) {
+    const q = process.env.KB_TEST_ASK;
     setTimeout(async () => {
       toggleChat();
       await new Promise((r) => setTimeout(r, 800));
       await chatWin.webContents.executeJavaScript(
         `document.getElementById('q').value = ${JSON.stringify(q)}; submit(); true;`
       );
-      const q2 = process.env.GB_TEST_ASK2;
+      const q2 = process.env.KB_TEST_ASK2;
       await new Promise((r) => setTimeout(r, 500));
       if (q2) {
         for (let i = 0; i < 60; i++) {
@@ -384,20 +384,20 @@ app.whenReady().then(() => {
     }, 2500);
   }
 
-  // 调试截图：GB_DEBUG_SHOT=<png路径>（GB_TEST_ASK 可选配：先提交一个问题）
-  if (process.env.GB_DEBUG_SHOT) {
+  // 调试截图：KB_DEBUG_SHOT=<png路径>（KB_TEST_ASK 可选配：先提交一个问题）
+  if (process.env.KB_DEBUG_SHOT) {
     setTimeout(async () => {
       toggleChat();
       await new Promise((r) => setTimeout(r, 2000));
-      if (process.env.GB_TEST_ASK !== undefined) {
+      if (process.env.KB_TEST_ASK !== undefined) {
         await chatWin.webContents.executeJavaScript(
-          `document.getElementById('q').value = ${JSON.stringify(process.env.GB_TEST_ASK)}; submit(); true;`
+          `document.getElementById('q').value = ${JSON.stringify(process.env.KB_TEST_ASK)}; submit(); true;`
         );
         await new Promise((r) => setTimeout(r, 900));
       }
       const img = await chatWin.webContents.capturePage();
-      fs.writeFileSync(process.env.GB_DEBUG_SHOT, img.toPNG());
-      console.log('截图已保存:', process.env.GB_DEBUG_SHOT);
+      fs.writeFileSync(process.env.KB_DEBUG_SHOT, img.toPNG());
+      console.log('截图已保存:', process.env.KB_DEBUG_SHOT);
       app.quit();
     }, 5000);
   }
