@@ -179,19 +179,29 @@ setInterval(() => {
 }, 500);
 
 /* ---------- 事件：答完欢呼 / 打开问答送爱心 ---------- */
-window.buddy.onPetEvent((e) => {
+// 事件动画：事件名 = 帧名（此前 main 发 'cheering'/'offering_heart' 而这里判 'cheer'/'greet'，名字对不上导致两个动画一直是哑的）
+// [默认时长ms, 优先级]：优先级高的能在保持期内打断低的——pi 秒答完时"干完欢呼"必须能中断"打工"，
+// 否则卡皮巴拉会一直打工、错过欢呼（实测踩到）。typing_laptop 时长即"最长打工"上限，兜底 pi 异常未发 settled。
+const EVENT_ANIM = {
+  typing_laptop:  [120000, 2],
+  cheering:       [1800, 3],
+  offering_heart: [1600, 2],
+  sleeping:       [3000, 2],
+};
+let eventHoldPri = 0;   // 当前事件动画优先级
+window.buddy.onPetEvent((e, ms) => {
   const now = Date.now();
   if (e === 'drag-lost') { endDrag(); return; }   // 主进程兜底：mouseup 丢失强制恢复
-  if (now < eventHoldUntil) return;
-  if (e === 'cheer') {
-    mode = 'cheering';
-    eventHoldUntil = now + 1500;
-    lastActivity = now;
-  } else if (e === 'greet') {
-    mode = 'offering_heart';
-    eventHoldUntil = now + 1500;
-    lastActivity = now;
-  }
+  if (mode === 'dragged') return;                 // 拖动优先，事件不打扰
+  const anim = EVENT_ANIM[e];
+  const dur = ms || (anim && anim[0]);
+  if (!dur) return;
+  const pri = anim ? anim[1] : 2;
+  if (now < eventHoldUntil && pri <= eventHoldPri) return;   // 同级/更低：保持期内忽略（防抖）
+  mode = e;
+  eventHoldUntil = now + dur;
+  eventHoldPri = pri;
+  lastActivity = now;
   render();
 });
 

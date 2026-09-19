@@ -8,6 +8,7 @@
  */
 const { app, BrowserWindow, globalShortcut, ipcMain, screen, Notification } = require('electron');
 const { spawn, execSync } = require('child_process');
+const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -304,8 +305,54 @@ ipcMain.on('pet-drag-move', (_e, sx, sy) => {
 ipcMain.on('pet-drag-end', () => { petDrag = null; });
 ipcMain.on('pet-click', () => toggleChat());
 
-function petEvent(ev) {
-  if (petWin && !petWin.isDestroyed()) petWin.webContents.send('pet-event', ev);
+function petEvent(ev, ms) {
+  if (petWin && !petWin.isDestroyed()) petWin.webContents.send('pet-event', ev, ms);
+}
+
+// ---------- pi 事件通道（pi 扩展 → 桌宠，仅本机回环） ----------
+// 扩展在 pi 进程里 POST 事件过来，桌宠据此演动画。见 ~/.pi/agent/extensions/kapybara-bridge.ts
+const PI_EVENT_PORT = 17898;
+const PI_EVENT_ANIM = {
+  agent_start:      'typing_laptop',    // pi 开始干活 → 打工（持续到 agent_settled）
+  agent_settled:    'cheering',         // pi 干完等你输入 → 欢呼（可打断打工）
+  session_start:    'offering_heart',   // 新 session → 捧爱心
+  session_shutdown: 'sleeping',         // session 关闭 → 睡觉
+};
+
+function onPiEvent(ev) {
+  const anim = PI_EVENT_ANIM[ev && ev.type];
+  if (!anim) return;
+  console.log(`[kapybara-buddy] pi 事件 ${ev.type}${ev.cwd ? ' @ ' + ev.cwd : ''} → 动画 ${anim}`);
+  petEvent(anim);   // 时长/优先级由 pet.html 的 EVENT_ANIM 决定
+}
+
+let piServer = null;
+function startPiEventChannel() {
+  piServer = http.createServer((req, res) => {
+    if (req.method !== 'POST' || !req.url.startsWith('/pi-event')) {
+      res.writeHead(404); res.end(); return;
+    }
+    let body = '';
+    req.on('data', (c) => { if (body.length < 16384) body += c; });
+    req.on('end', () => {
+      try {
+        onPiEvent(JSON.parse(body || '{}'));
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end('{"ok":true}');
+      } catch (_) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end('{"ok":false}');
+      }
+    });
+  });
+  piServer.on('error', (e) => {
+    // 端口被占不影响桌宠本身；pi 扩展的 POST 会静默失败
+    console.log(`[kapybara-buddy] pi 事件端口 ${PI_EVENT_PORT} 不可用（${e.code}）—— 桌宠照常运行`);
+    piServer = null;
+  });
+  piServer.listen(PI_EVENT_PORT, '127.0.0.1', () => {
+    console.log(`[kapybara-buddy] pi 事件通道就绪: http://127.0.0.1:${PI_EVENT_PORT}/pi-event（仅本机）`);
+  });
 }
 
 // ---------- 生命周期 ----------
@@ -314,6 +361,7 @@ app.whenReady().then(() => {
 
   createPetWindow();   // 常驻宠物
   createChatWindow();  // 预加载问答窗，呼出即达
+  startPiEventChannel();   // pi 扩展事件通道（仅本机回环）
   console.log(`[kapybara-buddy] 后端: ${BACKEND}` + (BACKEND === 'agy' ? ` (${findAgy() || '未找到!'})` : ' (免费网关，约1~2秒)'));
 
   const ok = globalShortcut.register(HOTKEY, toggleChat);
@@ -404,5 +452,8 @@ app.whenReady().then(() => {
 });
 
 app.on('second-instance', () => toggleChat());
-app.on('will-quit', () => globalShortcut.unregisterAll());
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+  if (piServer) piServer.close();
+});
 app.on('window-all-closed', () => {}); // 常驻后台

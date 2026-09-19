@@ -1,6 +1,6 @@
 ---
 title: kapybara-buddy 使用说明
-version: v2.11
+version: v3.0
 author: 胡嘉
 date: 2026-09-19
 ---
@@ -41,6 +41,7 @@ date: 2026-09-19
 | v2.9 | 2026-09-19 | 胡嘉 | 更名 gemini-buddy → kapybara-buddy：文件夹/README/启动脚本/日志名(~/.kapybara-buddy.log)/调试环境变量前缀 GB_→KB_；start.sh pkill 模式同步新路径；模型名 gemini-3.8-flash-low 为 agy 参数保留 |
 | v2.10 | 2026-09-19 | 胡嘉 | 修白边：朝向四帧（idle_front/look_left/look_right/look_up）贴边白描边 ~950px/帧 → 改为素材统一的黑描边；贴边白点复检归零、与无瑕疵帧结构一致 |
 | v2.11 | 2026-09-19 | 胡嘉 | 修透明眼睛：朝向四帧眼区内部透明孔洞（16~290px）填白——原先透出桌面背景；四帧复检孔洞归零 |
+| v3.0 | 2026-09-19 | 胡嘉 | pi 集成第一步：新增 pi 扩展把 session 生命周期推给桌宠（打工/欢呼/捧爱心/睡觉），本地回环 HTTP 通道（127.0.0.1:17898）；顺修事件动画哑火 bug（主进程发 'cheering' 而渲染层判 'cheer'，名字对不上）；加事件优先级——pi 秒答完时"干完欢呼"能打断"打工" |
 
 ## 链接
 - 无
@@ -95,6 +96,29 @@ npm start
 | 拖动顶部栏 | 移动窗口 |
 
 窗口出现在鼠标当前所在屏幕，居中偏上。每次提问独立会话（无上下文）。
+
+## pi 集成（可选）：卡皮巴拉跟着 pi 的 session 状态演动画
+
+装一个 pi 扩展（`pi-extension/kapybara-bridge.ts`），桌宠就能感知 pi 的 session 生命周期：
+
+| pi 事件 | 含义 | 卡皮巴拉 |
+| --- | --- | --- |
+| `session_start` | 新 session / resume / reload | 捧爱心迎接（1.6s） |
+| `agent_start` | pi 开始干活 | 打工敲键盘（**一直持续到干完**） |
+| `agent_settled` | pi 干完、等你输入 | 欢呼（1.8s，可打断打工） |
+| `session_shutdown` | session 关闭 | 趴下睡觉（3s） |
+
+用 `agent_settled` 而不是 `agent_end`：后者之后 pi 还可能自动重试、压缩后重试或处理排队消息，只有前者代表"真的不会再自动继续了"。
+
+**安装**（链接到本仓库源文件，改动只维护一份）：
+
+```bash
+ln -sf ~/Desktop/Working/2026-09_kapybara-buddy/pi-extension/kapybara-bridge.ts ~/.pi/agent/extensions/kapybara-bridge.ts
+```
+
+然后在 pi 里 `/reload`（或新开 session）生效——**当前已开着的 session 不会自动挂上**。
+
+**通道与安全**：扩展把事件 POST 到 `http://127.0.0.1:17898/pi-event`（桌宠起的本地回环服务，仅本机可访问）。桌宠没启动时扩展静默忽略（250ms 超时），绝不影响 pi。事件只带事件类型和 cwd，**不带对话内容**。改端口：桌宠端改 `main.js` 的 `PI_EVENT_PORT`，扩展端设 `KAPY_EVENT_URL`。
 
 ## 配置（main.js 顶部）
 
