@@ -32,14 +32,9 @@ if (process.env.GB_PROXY) {
 if (!app.requestSingleInstanceLock()) app.quit();
 
 // ---------- 后端选择 ----------
-// agy（Antigravity CLI，Google 登录态）> pollinations（零注册零 key 兜底）
+// 默认 pollinations（零注册零 key，1~2 秒出答案）；要质量用 GB_BACKEND=agy（需登录，9~11 秒）
 // GB_BACKEND=agy|pollinations 可强制指定
-let _agyCache;
-function agyPath() {
-  if (_agyCache === undefined) _agyCache = findAgy();
-  return _agyCache;
-}
-const BACKEND = process.env.GB_BACKEND || (findAgy() ? 'agy' : 'pollinations');
+const BACKEND = process.env.GB_BACKEND || 'pollinations';
 
 // ---------- pollinations：免费无 key，GET 即返回文本 ----------
 async function runPollinations(question) {
@@ -196,7 +191,7 @@ ipcMain.handle('stop', () => {
 // ---------- 生命周期 ----------
 app.whenReady().then(() => {
   createWindow(); // 预加载，呼出即达
-  console.log(`[gemini-buddy] 后端: ${BACKEND}` + (BACKEND === 'agy' ? ` (${agyPath()})` : ' (零 key 免费网关)'));
+  console.log(`[gemini-buddy] 后端: ${BACKEND}` + (BACKEND === 'agy' ? ` (${findAgy() || '未找到!'})` : ' (免费网关，约1~2秒)'));
 
   const ok = globalShortcut.register(HOTKEY, toggle);
   if (!ok) {

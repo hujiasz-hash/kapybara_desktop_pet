@@ -1,6 +1,6 @@
 ---
 title: gemini-buddy 使用说明
-version: v0.5
+version: v0.6
 author: 胡嘉
 date: 2026-09-19
 ---
@@ -15,6 +15,7 @@ date: 2026-09-19
 | v0.3 | 2026-09-19 | 胡嘉 | 回归 Electron 但自绘透明对话框：解决 macOS 无边框窗口无法键盘输入的坑；流式回答、覆盖式问答；支持 Windows |
 | v0.4 | 2026-09-19 | 胡嘉 | 多后端：新增 Pollinations 零注册零 key 免费网关自动兜底，Windows 无需安装/登录 agy |
 | v0.5 | 2026-09-19 | 胡嘉 | agy 默认用低思考档模型（gemini-3.8-flash-low）加速回答；回答区支持粗体/行内码渲染 |
+| v0.6 | 2026-09-19 | 胡嘉 | 默认后端改为 pollinations（实测 1~2 秒 vs agy 9~11 秒），agy 降为可选质量档（GB_BACKEND=agy） |
 
 ## 链接
 - 无
@@ -27,10 +28,10 @@ date: 2026-09-19
 
 **后端（自动选择，也可用环境变量 `GB_BACKEND=agy|pollinations` 强制）**：
 
-| 后端 | 条件 | 特点 |
+| 后端 | 选择方式 | 特点 |
 | --- | --- | --- |
-| `agy` | 本机装了 Antigravity CLI 且已登录 | 质量最好，mac 上默认走这条 |
-| `pollinations` | 无任何要求 | 零注册零 key 免费网关（GPT-4o-mini 级模型），Windows 默认走这条；注意问题会经过第三方服务，别问敏感内容 |
+| `pollinations` | **默认** | 零注册零 key，实测 1~2 秒；GPT-4o-mini 级模型；问题会经过第三方服务，别问敏感内容 |
+| `agy` | `GB_BACKEND=agy`（需装 CLI 并登录） | 9~11 秒，质量更好 |
 
 技术底座：Electron（透明无边框窗 + 系统级全局快捷键，无需辅助功能授权）。
 
