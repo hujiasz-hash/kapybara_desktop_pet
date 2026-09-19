@@ -29,6 +29,39 @@ if (process.env.GB_PROXY) {
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
+// ---------- 后端选择 ----------
+// agy（Antigravity CLI，Google 登录态）> pollinations（零注册零 key 兜底）
+// GB_BACKEND=agy|pollinations 可强制指定
+let _agyCache;
+function agyPath() {
+  if (_agyCache === undefined) _agyCache = findAgy();
+  return _agyCache;
+}
+const BACKEND = process.env.GB_BACKEND || (findAgy() ? 'agy' : 'pollinations');
+
+// ---------- pollinations：免费无 key，GET 即返回文本 ----------
+async function runPollinations(question) {
+  busy = true;
+  const send = (t) => { if (win && !win.isDestroyed()) win.webContents.send('answer-chunk', t); };
+  const done = () => {
+    busy = false;
+    if (win && !win.isDestroyed()) win.webContents.send('answer-done');
+    setTimeout(() => {
+      if (win && win.isVisible() && !win.isFocused()) win.hide();
+    }, 4000);
+  };
+  try {
+    const url = 'https://text.pollinations.ai/' + encodeURIComponent(question);
+    const resp = await fetch(url, { signal: AbortSignal.timeout(60000) });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const text = (await resp.text()).trim();
+    send(text || '[空回答]');
+  } catch (e) {
+    send(`[出错] ${e.message}（后端: pollinations）\n`);
+  }
+  done();
+}
+
 // ---------- agy 定位 ----------
 function findAgy() {
   try {
@@ -145,7 +178,8 @@ function runAgy(question) {
 ipcMain.handle('ask', (_e, q) => {
   const question = String(q || '').trim();
   if (!question || busy) return { ok: false, reason: busy ? 'busy' : 'empty' };
-  runAgy(question);
+  if (BACKEND === 'pollinations') runPollinations(question);
+  else runAgy(question);
   return { ok: true };
 });
 ipcMain.on('hide', () => { if (win) win.hide(); });
@@ -156,6 +190,7 @@ ipcMain.handle('stop', () => {
 // ---------- 生命周期 ----------
 app.whenReady().then(() => {
   createWindow(); // 预加载，呼出即达
+  console.log(`[gemini-buddy] 后端: ${BACKEND}` + (BACKEND === 'agy' ? ` (${agyPath()})` : ' (零 key 免费网关)'));
 
   const ok = globalShortcut.register(HOTKEY, toggle);
   if (!ok) {

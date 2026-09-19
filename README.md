@@ -1,6 +1,6 @@
 ---
 title: gemini-buddy 使用说明
-version: v0.3
+version: v0.4
 author: 胡嘉
 date: 2026-09-19
 ---
@@ -13,6 +13,7 @@ date: 2026-09-19
 | v0.1 | 2026-09-19 | 胡嘉 | 首版：Option+G 呼出的 Gemini 桌面小窗（Electron 内嵌网页） |
 | v0.2 | 2026-09-19 | 胡嘉 | 轻量重构：tkinter 浮窗 + Antigravity CLI（agy）问答，去掉 Electron |
 | v0.3 | 2026-09-19 | 胡嘉 | 回归 Electron 但自绘透明对话框：解决 macOS 无边框窗口无法键盘输入的坑；流式回答、覆盖式问答；支持 Windows |
+| v0.4 | 2026-09-19 | 胡嘉 | 多后端：新增 Pollinations 零注册零 key 免费网关自动兜底，Windows 无需安装/登录 agy |
 
 ## 链接
 - 无
@@ -23,7 +24,14 @@ date: 2026-09-19
 
 按 `Option+G`（Windows: `Alt+G`）呼出一个半透明对话框，打字回车提问，后台调用 Antigravity CLI（`agy`，复用 Google 账号登录态，免 API key），回答**流式**显示在窗口里，**每次提问覆盖上一条**。点窗口外自动隐藏。
 
-技术底座：Electron（透明无边框窗 + 系统级全局快捷键，无需辅助功能授权）+ agy headless 模式。
+**后端（自动选择，也可用环境变量 `GB_BACKEND=agy|pollinations` 强制）**：
+
+| 后端 | 条件 | 特点 |
+| --- | --- | --- |
+| `agy` | 本机装了 Antigravity CLI 且已登录 | 质量最好，mac 上默认走这条 |
+| `pollinations` | 无任何要求 | 零注册零 key 免费网关（GPT-4o-mini 级模型），Windows 默认走这条；注意问题会经过第三方服务，别问敏感内容 |
+
+技术底座：Electron（透明无边框窗 + 系统级全局快捷键，无需辅助功能授权）。
 
 ## macOS 启动 / 停止
 
@@ -37,8 +45,9 @@ cd ~/Desktop/Working/2026-09_gemini-buddy
 ## Windows 部署
 
 1. 安装 Node.js LTS（nodejs.org 下载即可）
-2. 安装 Antigravity CLI 并用 Google 账号登录（参照 https://antigravity.google/docs/cli/install ，终端运行 `agy` 完成登录）
-3. 把整个项目文件夹拷到 Windows 机器，在该目录下：
+2. 把整个项目文件夹拷到 Windows 机器，在该目录下：
+
+（可选）想要更好的回答质量：安装 Antigravity CLI 并登录（https://antigravity.google/docs/cli/install ），装了自动切换到 agy 后端。
 
 ```bat
 npm install
