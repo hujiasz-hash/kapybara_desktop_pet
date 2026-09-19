@@ -218,11 +218,21 @@ ipcMain.on('hide', () => { if (chatWin) chatWin.hide(); });
 ipcMain.handle('stop', () => {
   if (childProc) childProc.kill();
 });
-ipcMain.on('pet-drag', (_e, dx, dy) => {
+// 拖动：绝对坐标（按下时窗口位置 + 鼠标净位移），边缘 clamp 不会累积漂移
+let petDrag = null;
+ipcMain.on('pet-drag-start', (_e, sx, sy) => {
   if (!petWin) return;
   const [x, y] = petWin.getPosition();
-  petWin.setPosition(x + Math.round(dx), y + Math.round(dy));
+  petDrag = { sx, sy, x, y };
 });
+ipcMain.on('pet-drag-move', (_e, sx, sy) => {
+  if (!petDrag || !petWin) return;
+  petWin.setPosition(
+    Math.round(petDrag.x + sx - petDrag.sx),
+    Math.round(petDrag.y + sy - petDrag.sy)
+  );
+});
+ipcMain.on('pet-drag-end', () => { petDrag = null; });
 ipcMain.on('pet-click', () => toggleChat());
 
 function petEvent(ev) {

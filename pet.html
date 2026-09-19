@@ -131,18 +131,20 @@ let down = null, dragging = false;
 document.addEventListener('mousedown', (e) => {
   down = { x: e.clientX, y: e.clientY };
   dragging = false;
+  window.buddy.petDragStart(e.screenX, e.screenY);
 });
 document.addEventListener('mousemove', (e) => {
   if (!down) return;
   const dx = e.clientX - down.x, dy = e.clientY - down.y;
   if (dragging || Math.hypot(dx, dy) > 5) {
     if (!dragging) { dragging = true; mode = 'dragged'; render(); }
-    window.buddy.petDragBy(e.movementX, e.movementY);
+    window.buddy.petDragMove(e.screenX, e.screenY);
   }
 });
 document.addEventListener('mouseup', () => {
   if (down && !dragging) window.buddy.petClick();
   if (dragging) { mode = 'idle'; render(); }
+  window.buddy.petDragEnd();
   down = null;
   dragging = false;
 });
