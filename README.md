@@ -1,6 +1,6 @@
 ---
 title: gemini-buddy 使用说明
-version: v0.6
+version: v0.7
 author: 胡嘉
 date: 2026-09-19
 ---
@@ -16,6 +16,7 @@ date: 2026-09-19
 | v0.4 | 2026-09-19 | 胡嘉 | 多后端：新增 Pollinations 零注册零 key 免费网关自动兜底，Windows 无需安装/登录 agy |
 | v0.5 | 2026-09-19 | 胡嘉 | agy 默认用低思考档模型（gemini-3.8-flash-low）加速回答；回答区支持粗体/行内码渲染 |
 | v0.6 | 2026-09-19 | 胡嘉 | 默认后端改为 pollinations（实测 1~2 秒 vs agy 9~11 秒），agy 降为可选质量档（GB_BACKEND=agy） |
+| v0.7 | 2026-09-19 | 胡嘉 | 等待回复增加"思考中"三点跳动动画 + 蓝点变黄脉冲提示，提交瞬间即有反馈 |
 
 ## 链接
 - 无

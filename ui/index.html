@@ -35,7 +35,9 @@
   }
   #inputrow:focus-within { border-color: rgba(138, 180, 248, 0.6); }
   #dot { width: 8px; height: 8px; border-radius: 50%;
-         background: #8ab4f8; flex: none; }
+         background: #8ab4f8; flex: none; cursor: pointer; }
+  #dot.busy { background: #fdd663; animation: pulse 0.9s infinite; }
+  @keyframes pulse { 50% { opacity: 0.35; transform: scale(0.75); } }
   #q {
     flex: 1; background: transparent; border: none; outline: none;
     color: #e8eaed; font-size: 15px; caret-color: #8ab4f8;
@@ -51,6 +53,22 @@
   #a .dim { color: #8b8f94; }
   #a::-webkit-scrollbar { width: 6px; }
   #a::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+  /* 思考中指示器 */
+  #thinking {
+    display: none; align-items: center; gap: 8px;
+    margin: 0 16px 6px; color: #8ab4f8; font-size: 12px;
+  }
+  .tdots { display: inline-flex; gap: 5px; }
+  .tdots span {
+    width: 7px; height: 7px; border-radius: 50%; background: #8ab4f8;
+    animation: tbounce 1.2s infinite;
+  }
+  .tdots span:nth-child(2) { animation-delay: 0.18s; }
+  .tdots span:nth-child(3) { animation-delay: 0.36s; }
+  @keyframes tbounce {
+    0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
+    30%           { opacity: 1;    transform: translateY(-4px); }
+  }
   /* 思考动画 */
   #a.thinking::after {
     content: '▍'; color: #8ab4f8;
@@ -69,13 +87,21 @@
     <span id="dot"></span>
     <input id="q" placeholder="问点什么，回车发送…" spellcheck="false">
   </div>
+  <div id="thinking">
+    <span class="tdots"><span></span><span></span><span></span></span>
+    <span>思考中…（点蓝点可中止）</span>
+  </div>
   <div id="a"><span class="dim">回答会显示在这里，每次提问覆盖上一条。</span></div>
 </div>
 <script>
   const q = document.getElementById('q');
   const a = document.getElementById('a');
   const dot = document.getElementById('dot');
+  const thinking = document.getElementById('thinking');
   window.__test = { done: false };
+
+  function showThinking() { thinking.style.display = 'flex'; dot.classList.add('busy'); }
+  function hideThinking() { thinking.style.display = 'none'; dot.classList.remove('busy'); }
 
   function setDim(text) {
     a.innerHTML = '';
@@ -92,8 +118,8 @@
     if (!r.ok && r.reason === 'busy') return;
     q.value = '';
     a.textContent = '';
-    a.classList.add('thinking');
     window.__test.done = false;
+    showThinking();
   }
 
   q.addEventListener('keydown', (e) => {
@@ -116,13 +142,13 @@
   }
   window.buddy.onAnswerChunk((t) => {
     if (firstChunk) { raw = ''; a.classList.remove('dim'); firstChunk = false; }
+    hideThinking();
     raw += t;
-    a.classList.add('thinking');
     a.innerHTML = renderMarkdown(raw);
     a.scrollTop = a.scrollHeight;
   });
   window.buddy.onAnswerDone(() => {
-    a.classList.remove('thinking');
+    hideThinking();
     window.__test.done = true;
   });
   window.buddy.onFocusInput(() => {

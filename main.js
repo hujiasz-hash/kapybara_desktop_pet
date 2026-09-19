@@ -225,11 +225,17 @@ app.whenReady().then(() => {
     }, 2500);
   }
 
-  // 调试截图：GB_DEBUG_SHOT=<png路径>
+  // 调试截图：GB_DEBUG_SHOT=<png路径>（可选配 GB_TEST_ASK 先提交一个问题，抓思考动画）
   if (process.env.GB_DEBUG_SHOT) {
     setTimeout(async () => {
       toggle();
       await new Promise((r) => setTimeout(r, 2000));
+      if (process.env.GB_TEST_ASK !== undefined) {
+        await win.webContents.executeJavaScript(
+          `document.getElementById('q').value = ${JSON.stringify(process.env.GB_TEST_ASK)}; submit(); true;`
+        );
+        await new Promise((r) => setTimeout(r, 900));
+      }
       const img = await win.webContents.capturePage();
       fs.writeFileSync(process.env.GB_DEBUG_SHOT, img.toPNG());
       console.log('截图已保存:', process.env.GB_DEBUG_SHOT);
