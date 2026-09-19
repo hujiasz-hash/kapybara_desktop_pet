@@ -1,6 +1,6 @@
 ---
 title: kapybara-buddy 使用说明
-version: v2.9
+version: v2.10
 author: 胡嘉
 date: 2026-09-19
 ---
@@ -39,6 +39,7 @@ date: 2026-09-19
 | v2.7 | 2026-09-19 | 胡嘉 | 修右键双 bug：mouseup 未过滤按键致右键松开误触 endDrag（轻点看似无响应、按压松开回旧帧）；右键入口改 mousedown(button=2)，contextmenu 只屏蔽菜单 |
 | v2.8 | 2026-09-19 | 胡嘉 | 右键池补欢呼+捧爱心（原本只有事件动画可见）；weightedPick 支持自定义池，30 次连点全 11 种动作轮到 |
 | v2.9 | 2026-09-19 | 胡嘉 | 更名 gemini-buddy → kapybara-buddy：文件夹/README/启动脚本/日志名(~/.kapybara-buddy.log)/调试环境变量前缀 GB_→KB_；start.sh pkill 模式同步新路径；模型名 gemini-3.8-flash-low 为 agy 参数保留 |
+| v2.10 | 2026-09-19 | 胡嘉 | 修白边：朝向四帧（idle_front/look_left/look_right/look_up）贴边白描边 ~950px/帧 → 改为素材统一的黑描边；贴边白点复检归零、与无瑕疵帧结构一致 |
 
 ## 链接
 - 无
