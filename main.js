@@ -207,15 +207,34 @@ function createPetWindow() {
   // 拖动中被系统弹回（台前调度条等）→ 学习真实边界，后续帧 clamp 收紧不再进入
   petWin.on('move', () => {
     if (!petDrag || !petDrag.expect || petWin.isDestroyed()) return;
-    const [ax] = petWin.getPosition();
     const ex = petDrag.expect.x;
-    if (Math.abs(ax - ex) > 3) {
-      // 被系统弹回：真实边界在最后一次稳定位置附近（弹回落点可能飞很远，不可用）
-      if (ex > ax) petLimit = { minX: petLimit ? petLimit.minX : -1e9, maxX: petDrag.stableX };
-      else if (ex < ax) petLimit = { minX: petDrag.stableX, maxX: petLimit ? petLimit.maxX : 1e9 };
-      petDrag.expect = null;
-    } else {
-      petDrag.stableX = ax;   // 记录最后稳定位置
+    const [ax] = petWin.getPosition();
+    if (Math.abs(ax - ex) <= 3) {
+      petDrag.stableX = ax;        // 记录最后稳定位置
+      if (petDrag.confirmT) { clearTimeout(petDrag.confirmT); petDrag.confirmT = null; }
+      return;
+    }
+    // 位置不符：可能是系统弹回，也可能只是 setPosition 应用延迟——延时确认再学
+    if (!petDrag.confirmT) {
+      petDrag.confirmT = setTimeout(() => {
+        if (!petDrag || !petDrag.expect || petWin.isDestroyed()) return;
+        const ex2 = petDrag.expect.x;
+        const [nx] = petWin.getPosition();
+        if (Math.abs(nx - ex2) > 3) {
+          // 确认真弹回（系统持续拒绝期望位置）：真实边界在最后一次稳定位置附近
+          const learn = (dir) => {
+            const cand = dir > 0
+              ? { minX: petLimit ? petLimit.minX : -1e9, maxX: petDrag.stableX }
+              : { minX: petDrag.stableX, maxX: petLimit ? petLimit.maxX : 1e9 };
+            // 防钉死：边界必须留出足够活动空间
+            if (cand.minX < cand.maxX - 200) petLimit = cand;
+          };
+          learn(ex2 > nx ? 1 : -1);
+          petDrag.expect = null;
+        }
+        // 已追平 → 只是延迟，不学
+        if (petDrag) petDrag.confirmT = null;
+      }, 150);
     }
   });
   petWin.webContents.on('console-message', (_e, _lvl, msg) => {
