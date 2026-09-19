@@ -52,6 +52,7 @@ async function runPollinations(question) {
     const resp = await fetch(url, { signal: AbortSignal.timeout(60000) });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const text = (await resp.text()).trim();
+    console.log(`[gemini-buddy][pollinations] 返回长度=${text.length}, 发送 chunk`);
     send(text || '[空回答]');
   } catch (e) {
     send(`[出错] ${e.message}（后端: pollinations）\n`);
@@ -108,6 +109,15 @@ function createWindow() {
     if (!busy && win.isVisible()) win.hide();
   });
   win.on('closed', () => { win = null; });
+
+  // 卡皮巴拉眼睛跟随：推送全局鼠标 + 窗口位置
+  setInterval(() => {
+    if (win && !win.isDestroyed() && win.isVisible()) {
+      const p = screen.getCursorScreenPoint();
+      const [wx, wy] = win.getPosition();
+      win.webContents.send('cursor', { mx: p.x, my: p.y, wx, wy });
+    }
+  }, 120);
 }
 
 function positionAtCursor() {
@@ -202,7 +212,8 @@ app.whenReady().then(() => {
   }
 
   // 自动化测试：GB_TEST_ASK="问题" 启动，自动呼出、提问、打印回答后退出
-  if (process.env.GB_TEST_ASK !== undefined) {
+  // （与 GB_DEBUG_SHOT 互斥：截图模式自带提问逻辑）
+  if (process.env.GB_TEST_ASK !== undefined && !process.env.GB_DEBUG_SHOT) {
     const q = process.env.GB_TEST_ASK || '1+1等于几？一句话回答';
     setTimeout(async () => {
       toggle();
@@ -210,6 +221,19 @@ app.whenReady().then(() => {
       await win.webContents.executeJavaScript(
         `document.getElementById('q').value = ${JSON.stringify(q)}; submit(); true;`
       );
+      // 若 GB_TEST_ASK2 存在：第一答完成后再问第二个问题，验证覆盖
+      const q2 = process.env.GB_TEST_ASK2;
+      await new Promise((r) => setTimeout(r, 500));
+      if (q2) {
+        for (let i = 0; i < 60; i++) {
+          const d = await win.webContents.executeJavaScript('window.__test.done');
+          if (d) break;
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+        await win.webContents.executeJavaScript(
+          `document.getElementById('q').value = ${JSON.stringify(q2)}; submit(); true;`
+        );
+      }
       // 轮询直到回答完成
       for (let i = 0; i < 120; i++) {
         await new Promise((r) => setTimeout(r, 1000));

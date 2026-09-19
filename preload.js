@@ -7,4 +7,5 @@ contextBridge.exposeInMainWorld('buddy', {
   onFocusInput: (cb) => ipcRenderer.on('focus-input', () => cb()),
   onAnswerChunk: (cb) => ipcRenderer.on('answer-chunk', (_e, t) => cb(t)),
   onAnswerDone: (cb) => ipcRenderer.on('answer-done', () => cb()),
+  onCursor: (cb) => ipcRenderer.on('cursor', (_e, pos) => cb(pos)),
 });
