@@ -11,33 +11,6 @@
         image-rendering: pixelated; display: none; pointer-events: none; }
   img.on { display: block; }
 
-  /* ---------- 状态动效 ----------
-     素材是静态帧，"换个动作"如果只是换一张静止图，肉眼几乎看不出变化（用户实测反馈）。
-     这里按状态给 img 加 transform 动画，让每个动作真的"动起来"。
-     一次性动作（欢呼/捧爱心）用 infinite 循环，靠保持期到点切走，避免每次重播的 hack。 */
-  @keyframes kb-type    { 0%,100% { transform: translateY(0) }      50% { transform: translateY(-3.5%) } }
-  @keyframes kb-hop     { 0%,100% { transform: translateY(0) }      45% { transform: translateY(-11%) } }
-  @keyframes kb-breathe { 0%,100% { transform: scale(1) }           50% { transform: scale(1.035) } }
-  @keyframes kb-sway    { 0%,100% { transform: translateX(-2.5%) rotate(-2deg) } 50% { transform: translateX(2.5%) rotate(2deg) } }
-  @keyframes kb-float   { 0%,100% { transform: translateY(0) }      50% { transform: translateY(-4.5%) } }
-  @keyframes kb-nod     { 0%,100% { transform: translateY(0) rotate(0deg) }     50% { transform: translateY(2.5%) rotate(4deg) } }
-  @keyframes kb-dangle  { 0%,100% { transform: rotate(-5deg) }      50% { transform: rotate(5deg) } }
-  @keyframes kb-wiggle  { 0%,100% { transform: translateX(0) }      50% { transform: translateX(-2.5%) } }
-
-  body[data-state="typing_laptop"]   img { animation: kb-type    .34s ease-in-out infinite; }
-  body[data-state="cheering"]        img { animation: kb-hop     .3s  ease-out    infinite; }
-  body[data-state="offering_heart"]  img { animation: kb-hop     .42s ease-out    infinite; }
-  body[data-state="sleeping"]        img { animation: kb-breathe 3.2s ease-in-out infinite; }
-  body[data-state="nodding_off"]     img { animation: kb-nod     1.5s ease-in-out infinite; }
-  body[data-state="spacing_out"]     img { animation: kb-breathe 4s   ease-in-out infinite; }
-  body[data-state="walking"]         img { animation: kb-sway    .9s  ease-in-out infinite; }
-  body[data-state="fast_running"]    img { animation: kb-sway    .38s ease-in-out infinite; }
-  body[data-state="picked_up"]       img { animation: kb-dangle  .7s  ease-in-out infinite; }
-  body[data-state="hot_spring"]      img { animation: kb-float   2.4s ease-in-out infinite; }
-  body[data-state="orange_balancing"] img { animation: kb-float  1.5s ease-in-out infinite; }
-  body[data-state="drinking_coffee"] img { animation: kb-wiggle  1.1s ease-in-out infinite; }
-  body[data-state="munching_clover"] img { animation: kb-wiggle  .65s ease-in-out infinite; }
-  body[data-state="eating_orange"]   img { animation: kb-wiggle  .8s  ease-in-out infinite; }
 </style>
 </head>
 <body>
@@ -76,6 +49,39 @@ for (const [key, file] of Object.entries(FRAME_FILES)) {
   FRAME_SRC[key] = 'ui/frames/' + file;
 }
 
+/* ---------- 逐帧动画 ----------
+   素材每个动作只有一张静态帧。离线用整数像素位移生成 2~4 帧变体（ui/frames/anim/），
+   运行时按帧率硬切换 —— 真·逐帧动画。
+   不用 CSS transform 平滑位移：亚像素插值在像素画上既"假"又晃眼（实测反馈），
+   而且位移幅度经 420→110 缩放会被放大到 15px 级别。 */
+const ANIM = {          // 状态: [帧数, 每帧毫秒]
+  typing_laptop:     [2, 200],    // 打字：小幅上下
+  cheering:          [4, 120],    // 欢呼：跳跃
+  offering_heart:    [2, 260],    // 捧爱心
+  walking:           [4, 220],    // 走路：踏步
+  fast_running:      [4, 110],    // 快跑
+  sleeping:          [2, 1500],   // 睡觉：呼吸（慢）
+  nodding_off:       [2, 750],    // 打瞌睡：点头
+  hot_spring:        [2, 1300],   // 泡温泉
+  orange_balancing:  [2, 900],    // 顶橘
+  picked_up:         [4, 200],    // 被提溜：左右晃
+  munching_clover:   [2, 300],    // 嚼三叶草
+  eating_orange:     [2, 350],    // 吃橘子
+  drinking_coffee:   [2, 500],    // 喝咖啡
+};
+const ANIM_SRC = {};
+for (const [state, [n]] of Object.entries(ANIM)) {
+  ANIM_SRC[state] = [];
+  for (let i = 0; i < n; i++) {
+    const u = `ui/frames/anim/${state}_${i}.png`;
+    const pre = new Image();
+    pre.onerror = () => console.error('[pet] ANIM-PRELOAD-FAIL ' + u);
+    pre.src = u;
+    ANIM_SRC[state].push(u);
+  }
+}
+let animState = null, animTimer = null;
+
 /* ---------- 节奏参数（?fast=1 测试用短阈值） ---------- */
 const FAST = new URLSearchParams(location.search).has('fast');
 const NOD_AFTER   = (FAST ? 3 : 15) * 1000;   // 鼠标静止 15s → 打瞌睡
@@ -106,8 +112,18 @@ function frameName() {
 }
 function render() {
   const k = frameName();
-  if (document.body.dataset.state !== k) document.body.dataset.state = k;   // 驱动状态动效
-  img.src = FRAME_SRC[k];
+  if (document.body.dataset.state !== k) document.body.dataset.state = k;   // 仅供调试观察
+  if (animState === k) return;              // 同状态：动画继续跑，不重启
+  animState = k;
+  if (animTimer) { clearInterval(animTimer); animTimer = null; }
+  const frames = ANIM_SRC[k];
+  if (!frames) { img.src = FRAME_SRC[k]; return; }   // 无动画定义 → 静态帧
+  let i = 0;
+  img.src = frames[0];
+  animTimer = setInterval(() => {
+    i = (i + 1) % frames.length;
+    img.src = frames[i];
+  }, ANIM[k][1]);
 }
 
 /* ---------- 鼠标朝向 + 空闲检测（主进程 120ms 推送全局光标） ---------- */
