@@ -73,6 +73,12 @@ for (const [name, urls] of Object.entries(ANIM_SRC)) {
   }
 }
 
+/* ---------- 播放速度 ----------
+   素材作者给的 GIF 节奏偏快，实测"换得太勤、眼花"，统一放慢一档；
+   快跑保住冲刺感所以少放慢一点。 */
+const FRAME_SCALE = { run: 1.15 };   // 个别动作覆盖
+const FRAME_SCALE_DEFAULT = 1.4;     // 其余统一放慢
+
 /* ---------- 帧播放器：每帧时长可能不同，所以用递归 setTimeout ---------- */
 let animName = null, animTimer = null, animIdx = 0;
 function play(name) {
@@ -87,12 +93,13 @@ function play(name) {
 }
 function tickFrame() {
   const name = animName, a = ANIM[name];
+  const scale = FRAME_SCALE[name] || FRAME_SCALE_DEFAULT;
   animTimer = setTimeout(() => {
     if (animName !== name) return;
     animIdx = (animIdx + 1) % a.seq.length;
     img.src = ANIM_SRC[name][animIdx];
     tickFrame();
-  }, a.durs[animIdx]);
+  }, a.durs[animIdx] * scale);
 }
 
 /* ---------- 节奏参数（?fast=1 测试用短阈值） ---------- */
@@ -112,7 +119,7 @@ let drowsy = null;
 let eventMode = null, eventKind = null, eventHoldUntil = 0, eventHoldPri = 0;
 let workFallback = null;            // 工作态兜底：瞬时反馈播完回到它（agent_settled 时清空）
 let behaviorHoldUntil = 0;
-let nextBehaviorAt = Date.now() + 2000 + Math.random() * 2500;
+let nextBehaviorAt = Date.now() + 6000 + Math.random() * 4000;
 let lastMouse = { x: -1, y: -1 };
 let lastActivity = Date.now();
 const dragged = () => mode === 'dragged';
@@ -155,23 +162,25 @@ window.buddy.onCursor(({ mx, my, px, py }) => {
 function wake() {
   drowsy = null;
   mode = 'nodding';
-  behaviorHoldUntil = Date.now() + 2600;                        // 一轮 800+1000+800
-  nextBehaviorAt = Date.now() + 3200 + Math.random() * 3000;
+  behaviorHoldUntil = Date.now() + 3600;                        // 一轮 nodding（放慢后 800+1000+800 各 ×1.4）
+  nextBehaviorAt = Date.now() + 8000 + Math.random() * 5000;
   lastActivity = Date.now();
   render();
 }
 
 /* ---------- 无 hook 时的自娱池（只在桌宠自己活着时用） ---------- */
 const IDLE_BEHAVIORS = [
-  ['walk',          3000, 3,   null],   // 漫步巡逻
-  ['run',           2000, 1,   null],   // 快跑冲刺
-  ['clover',        3200, 2,   null],   // 嚼三叶草
-  ['eating_orange', 3000, 2,   null],   // 吃橘子
-  ['coffee',        4000, 2,   null],   // 喝咖啡摸鱼
-  ['orange_trick',  2800, 2,   null],   // 顶橘绝活
-  ['spacing_out',   3500, 2,   null],   // 灵魂出窍发呆
-  ['hot_spring',    6000, 0.5, null],   // 泡温泉（彩蛋级，少见）
+  ['walk',          9000, 3,   null],   // 漫步巡逻（一轮 1.2s → 约 7 轮）
+  ['run',           6000, 1,   null],   // 快跑冲刺
+  ['clover',       10000, 2,   null],   // 嚼三叶草（一轮 1.8s → 约 6 轮）
+  ['eating_orange', 9000, 2,   null],   // 吃橘子
+  ['coffee',       12000, 2,   null],   // 喝咖啡摸鱼（一轮 2.5s → 约 5 轮）
+  ['orange_trick',  9000, 2,   null],   // 顶橘绝活
+  ['spacing_out',  11000, 2,   null],   // 灵魂出窍发呆
+  ['hot_spring',   14000, 0.5, null],   // 泡温泉（彩蛋级，少见）
 ];
+// 两个自娱动作之间空多久（原先 2~4.5s，太密导致"一直在换"）
+const GAP_MIN = 7000, GAP_RAND = 7000;
 function weightedPick(pool) {
   const p = pool || IDLE_BEHAVIORS;
   const total = p.reduce((s, b) => s + b[2], 0);
@@ -187,7 +196,7 @@ function playBehavior(preferSwap) {
   // 注意：这里绝不能刷新 lastActivity —— 自娱行为每几秒触发一次，
   // 一刷新 lastActivity 就永远到不了 15s/30s 的睡意阈值（旧版就是这么坏掉的）。
   behaviorHoldUntil = Date.now() + dur;
-  nextBehaviorAt = behaviorHoldUntil + 2000 + Math.random() * 2500;
+  nextBehaviorAt = behaviorHoldUntil + GAP_MIN + Math.random() * GAP_RAND;
   render();
 }
 
@@ -206,14 +215,14 @@ document.addEventListener('contextmenu', (e) => e.preventDefault());   // 只屏
      ・新事件总能接管（代表更新的状态）
      ・例外：高优先级的瞬时反馈正在播时，低优先级事件让路（别把欢呼/生气掐掉） */
 const EVENT_ANIM = {
-  heart:       [2300, 2, 'once'],      // session_start    → 捧爱心打招呼
-  inspiration: [1800, 2, 'once'],      // 工具跑成功       → 灵光一现
-  angry_zen:   [2500, 3, 'once'],      // 工具跑失败       → 气到冒烟
-  cheering:    [3800, 3, 'once'],      // agent_settled    → 干完了欢呼
+  heart:       [3200, 2, 'once'],      // session_start    → 捧爱心打招呼（1 轮）
+  inspiration: [2500, 2, 'once'],      // 工具跑成功       → 灵光一现（1 轮）
+  angry_zen:   [3500, 3, 'once'],      // 工具跑失败       → 气到冒烟（1 轮）
+  cheering:    [3200, 3, 'once'],      // agent_settled    → 干完了欢呼（2 轮）
   thinking:    [120000, 2, 'work'],    // agent_start      → 托腮思考
   typing:      [120000, 2, 'work'],    // 工具执行中       → 敲键盘打工
-  spacing_out: [3000, 2, 'once'],      // 压缩上下文       → 发呆
-  sleep:       [3000, 1, 'once'],      // session 关闭     → 趴下睡
+  spacing_out: [3000, 2, 'once'],      // 压缩上下文       → 发呆（1 轮）
+  sleep:       [3900, 1, 'once'],      // session 关闭     → 趴下睡（1 轮多）
 };
 
 window.buddy.onPetEvent((e, ms) => {
