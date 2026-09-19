@@ -202,8 +202,19 @@ function createPetWindow() {
 
   // 初始位置：主屏右上角
   const wa = screen.getPrimaryDisplay().workArea;
-  petWin.setPosition(wa.x + wa.width - 130, wa.y + 70);
-  console.log(`[gemini-buddy] pet 初始=(${wa.x + wa.width - 130}, ${wa.y + 70}) workArea=${wa.width}x${wa.height}+${wa.x}+${wa.y}`);
+  const initX = wa.x + wa.width - 130, initY = wa.y + 70;
+  petWin.setPosition(initX, initY);
+  console.log(`[gemini-buddy] pet 初始=(${initX}, ${initY}) workArea=${wa.width}x${wa.height}+${wa.x}+${wa.y}`);
+  // 预学系统真实右边界：初始位置若被系统弹回（台前调度条），用弹回结果学边界，
+  // 之后拖动从第一帧起就 clamp 在真实边界内，不会"闪进去再弹回"
+  setTimeout(() => {
+    if (!petWin || petWin.isDestroyed()) return;
+    const [ax] = petWin.getPosition();
+    if (ax < initX - 5) {
+      petLimit = { minX: -1e9, maxX: ax };
+      console.log(`[gemini-buddy] 台前调度右边界预学: maxX=${ax}`);
+    }
+  }, 400);
   // 拖动中被系统弹回（台前调度条等）→ 学习真实边界，后续帧 clamp 收紧不再进入
   petWin.on('move', () => {
     if (!petDrag || !petDrag.expect || petWin.isDestroyed()) return;
@@ -269,7 +280,7 @@ ipcMain.on('pet-drag-start', (_e, sx, sy) => {
   if (!petWin) return;
   const [x, y] = petWin.getPosition();
   petDrag = { sx, sy, x, y, lastMove: Date.now(), expect: null, stableX: x };
-  petLimit = null;   // 每次拖动重新学习（台前调度开/关自适应）
+  // petLimit 进程级持久（启动预学 + 首次拖动补学，避免每次拖动重学都闪一次）
 });
 ipcMain.on('pet-drag-move', (_e, sx, sy) => {
   if (!petDrag || !petWin) return;
