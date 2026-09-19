@@ -260,6 +260,14 @@ app.whenReady().then(() => {
         );
         await new Promise((r) => setTimeout(r, 900));
       }
+      const layout = await win.webContents.executeJavaScript(`(() => {
+        const r = (s) => { const b = document.querySelector(s)?.getBoundingClientRect(); return b ? [b.x,b.y,b.width,b.height].map(Math.round) : null; };
+        const p = document.getElementById('panel');
+        const cs = getComputedStyle(p);
+        const bs = getComputedStyle(document.getElementById('bar'));
+        return JSON.stringify({ panelRect: r('#panel'), panelDisplay: cs.display, panelDir: cs.flexDirection, panelH: cs.height, bodyH: document.body.getBoundingClientRect().height, barMarginTop: bs.marginTop, barPos: bs.position, kids: [...p.children].map(c => c.id + ':' + getComputedStyle(c).display + ':' + Math.round(c.getBoundingClientRect().y)) });
+      })()`);
+      console.log('[gemini-buddy] 布局:', layout);
       const img = await win.webContents.capturePage();
       fs.writeFileSync(process.env.GB_DEBUG_SHOT, img.toPNG());
       console.log('截图已保存:', process.env.GB_DEBUG_SHOT);
