@@ -211,7 +211,6 @@ function createPetWindow() {
     if (level >= 2 || msg.includes('[pet]')) console.log(`[pet-console:${level}] ${msg} (${src.split('/').pop()}:${line})`);
   });
   petWin.showInactive();         // 显示但不夺焦点
-  petWin.on('move', absorbPetDragCorrection);
   petWin.on('closed', () => { petWin = null; });
 }
 
@@ -228,7 +227,7 @@ ipcMain.handle('stop', () => {
   if (childProc) childProc.kill();
 });
 // 拖动：绝对坐标（按下时窗口位置 + 鼠标净位移），边缘 clamp 不会累积漂移
-let petDrag = null;   // {sx, sy, x, y, last}
+let petDrag = null;   // {sx, sy, x, y}
 ipcMain.on('pet-drag-start', (_e, sx, sy) => {
   if (!petWin) return;
   const [x, y] = petWin.getPosition();
@@ -246,18 +245,7 @@ ipcMain.on('pet-drag-move', (_e, sx, sy) => {
   x = Math.max(wa.x + m, Math.min(x, wa.x + wa.width - PET_SIZE - m));
   y = Math.max(wa.y + m, Math.min(y, wa.y + wa.height - PET_SIZE - m));
   petWin.setPosition(x, y);
-  petDrag.last = { sx, sy };
 });
-// macOS 台前调度会把窗口从它的图标区"弹回"到系统允许的位置：
-// 监听 move，把系统修正后的实际位置吸收进拖动基准——
-// 否则 setPosition 和系统弹回逐帧打架，宠物会闪烁
-function absorbPetDragCorrection() {
-  if (!petDrag || !petWin || !petDrag.last) return;
-  const [x, y] = petWin.getPosition();
-  petDrag.x = Math.round(x - (petDrag.last.sx - petDrag.sx));
-  petDrag.y = Math.round(y - (petDrag.last.sy - petDrag.sy));
-}
-ipcMain.on('pet-drag-end', () => { petDrag = null; });
 ipcMain.on('pet-drag-end', () => { petDrag = null; });
 ipcMain.on('pet-click', () => toggleChat());
 
