@@ -1,6 +1,6 @@
 ---
 title: kapybara-buddy 使用说明
-version: v2.10
+version: v2.11
 author: 胡嘉
 date: 2026-09-19
 ---
@@ -40,6 +40,7 @@ date: 2026-09-19
 | v2.8 | 2026-09-19 | 胡嘉 | 右键池补欢呼+捧爱心（原本只有事件动画可见）；weightedPick 支持自定义池，30 次连点全 11 种动作轮到 |
 | v2.9 | 2026-09-19 | 胡嘉 | 更名 gemini-buddy → kapybara-buddy：文件夹/README/启动脚本/日志名(~/.kapybara-buddy.log)/调试环境变量前缀 GB_→KB_；start.sh pkill 模式同步新路径；模型名 gemini-3.8-flash-low 为 agy 参数保留 |
 | v2.10 | 2026-09-19 | 胡嘉 | 修白边：朝向四帧（idle_front/look_left/look_right/look_up）贴边白描边 ~950px/帧 → 改为素材统一的黑描边；贴边白点复检归零、与无瑕疵帧结构一致 |
+| v2.11 | 2026-09-19 | 胡嘉 | 修透明眼睛：朝向四帧眼区内部透明孔洞（16~290px）填白——原先透出桌面背景；四帧复检孔洞归零 |
 
 ## 链接
 - 无
