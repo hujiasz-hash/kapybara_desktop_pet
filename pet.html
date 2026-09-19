@@ -10,77 +10,90 @@
   img { position: absolute; inset: 0; width: 100%; height: 100%;
         image-rendering: pixelated; display: none; pointer-events: none; }
   img.on { display: block; }
-
 </style>
 </head>
 <body>
 <script>
-/* ---------- 帧库（18 动作，420x420） ---------- */
-const FRAME_FILES = {
-  idle:     'frame_01_idle_front.png',   // 防御：mode 意外为 idle 时不落空
-  front:    'frame_01_idle_front.png',
-  left:     'frame_02_look_left.png',
-  right:    'frame_03_look_right.png',
-  up:       'frame_04_look_up.png',
-  walking:  'frame_05_walking.png',
-  sleeping: 'frame_06_sleeping.png',
-  cheering: 'frame_07_cheering.png',
-  spacing_out: 'frame_08_spacing_out.png',
-  typing_laptop: 'frame_09_typing_laptop.png',
-  drinking_coffee: 'frame_10_drinking_coffee.png',
-  picked_up: 'frame_11_picked_up.png',
-  hot_spring: 'frame_12_hot_spring.png',
-  nodding_off: 'frame_13_nodding_off.png',
-  orange_balancing: 'frame_14_orange_balancing.png',
-  fast_running: 'frame_15_fast_running.png',
-  offering_heart: 'frame_16_offering_heart.png',
-  munching_clover: 'frame_17_munching_clover.png',
-  eating_orange: 'frame_18_eating_orange.png',
+/* ================================================================
+   卡皮巴拉桌宠 · 渲染层
+   素材：17 个动作 × 3 帧（420x420 透明 PNG），各动作帧序与节奏照抄作者给的 GIF。
+   帧序不是简单 1→2→3 循环：typing 是 [1,2,3,2] 乒乓、clover 是 [1,2,1,2,3] 等。
+   ================================================================ */
+
+/* ---------- 朝向（静态，沿用旧素材四帧；已下移 19px 与新动作帧对齐到同一脚底线） ---------- */
+const IDLE_SRC = {
+  front: 'ui/frames/idle_front.png',
+  left:  'ui/frames/idle_left.png',
+  right: 'ui/frames/idle_right.png',
+  up:    'ui/frames/idle_up.png',
+  idle:  'ui/frames/idle_front.png',   // 防御：意外用 'idle' 作帧名时不落空
 };
-const img = document.createElement('img');
-img.onerror = () => console.error('[pet] FRAME-FAIL src=' + img.getAttribute('src') + ' mode=' + mode + ' look=' + look);
-img.className = 'on';
-document.body.appendChild(img);
-const FRAME_SRC = {};
-for (const [key, file] of Object.entries(FRAME_FILES)) {
-  const pre = new Image();
-  pre.onerror = () => console.error('[pet] PRELOAD-FAIL ' + key + ' -> ' + file);
-  pre.src = 'ui/frames/' + file;                      // 预热 + 校验
-  FRAME_SRC[key] = 'ui/frames/' + file;
+
+/* ---------- 逐帧动画表：seq = 用第几帧，durs = 每帧毫秒（与 GIF 一致） ---------- */
+const ANIM = {
+  typing:        { seq: [1, 2, 3, 2],   durs: [180, 150, 180, 150] },   // 敲键盘打工
+  picked_up:     { seq: [1, 2, 1, 3],   durs: [280, 280, 280, 280] },   // 被拎悬空扑腾
+  coffee:        { seq: [1, 2, 3],      durs: [600, 600, 600] },        // 喝热咖啡摸鱼
+  cheering:      { seq: [1, 2, 3],      durs: [350, 450, 350] },        // 欢呼雀跃跳跃
+  spacing_out:   { seq: [1, 2, 3],      durs: [700, 700, 700] },        // 灵魂出窍发呆
+  hot_spring:    { seq: [1, 2, 3, 2],   durs: [500, 500, 500, 500] },   // 泡温泉顶毛巾
+  walk:          { seq: [1, 2, 3, 2],   durs: [220, 220, 220, 220] },   // 漫步走动巡逻
+  run:           { seq: [1, 2, 3],      durs: [140, 140, 140] },        // 贴地快跑冲刺
+  nodding:       { seq: [1, 2, 3],      durs: [800, 1000, 800] },       // 坐立瞌睡惊醒
+  sleep:         { seq: [1, 2, 3, 1],   durs: [700, 700, 700, 700] },   // 趴下安睡打盹
+  orange_trick:  { seq: [1, 2, 3],      durs: [400, 350, 400] },        // 顶橘颠球绝活
+  clover:        { seq: [1, 2, 1, 2, 3], durs: [350, 300, 450, 350, 300] },  // 大嚼三叶草
+  heart:         { seq: [1, 2, 3, 1],   durs: [500, 700, 600, 500] },   // 手捧爱心互动
+  eating_orange: { seq: [1, 2, 3],      durs: [450, 400, 500] },        // 细品橘子果肉
+  angry_zen:     { seq: [1, 2, 3, 1],   durs: [600, 700, 600, 600] },   // 气到冒烟但超淡定
+  thinking:      { seq: [1, 2, 3, 2],   durs: [600, 600, 600, 600] },   // 托腮深度思考
+  inspiration:   { seq: [1, 2, 3],      durs: [600, 500, 700] },        // 灵光一现灯泡
+};
+const ANIM_SRC = {};   // 动作名 → 帧 URL 数组（按 seq 展开，index 与播放序号对应）
+for (const [name, a] of Object.entries(ANIM)) {
+  ANIM_SRC[name] = a.seq.map((n) => `ui/frames/${name}_${n}.png`);
 }
 
-/* ---------- 逐帧动画 ----------
-   素材每个动作只有一张静态帧。离线用整数像素位移生成 2~4 帧变体（ui/frames/anim/），
-   运行时按帧率硬切换 —— 真·逐帧动画。
-   不用 CSS transform 平滑位移：亚像素插值在像素画上既"假"又晃眼（实测反馈），
-   而且位移幅度经 420→110 缩放会被放大到 15px 级别。 */
-const ANIM = {          // 状态: [帧数, 每帧毫秒]
-  typing_laptop:     [2, 200],    // 打字：小幅上下
-  cheering:          [4, 120],    // 欢呼：跳跃
-  offering_heart:    [2, 260],    // 捧爱心
-  walking:           [4, 220],    // 走路：踏步
-  fast_running:      [4, 110],    // 快跑
-  sleeping:          [2, 1500],   // 睡觉：呼吸（慢）
-  nodding_off:       [2, 750],    // 打瞌睡：点头
-  hot_spring:        [2, 1300],   // 泡温泉
-  orange_balancing:  [2, 900],    // 顶橘
-  picked_up:         [4, 200],    // 被提溜：左右晃
-  munching_clover:   [2, 300],    // 嚼三叶草
-  eating_orange:     [2, 350],    // 吃橘子
-  drinking_coffee:   [2, 500],    // 喝咖啡
-};
-const ANIM_SRC = {};
-for (const [state, [n]] of Object.entries(ANIM)) {
-  ANIM_SRC[state] = [];
-  for (let i = 0; i < n; i++) {
-    const u = `ui/frames/anim/${state}_${i}.png`;
+const img = document.createElement('img');
+img.onerror = () => console.error('[pet] FRAME-FAIL src=' + img.getAttribute('src'));
+img.className = 'on';
+document.body.appendChild(img);
+
+/* 预载 + 校验：任何一个文件缺失都会在日志里留下 PRELOAD-FAIL */
+for (const [k, u] of Object.entries(IDLE_SRC)) {
+  const pre = new Image();
+  pre.onerror = () => console.error('[pet] PRELOAD-FAIL idle:' + k + ' → ' + u);
+  pre.src = u;
+}
+for (const [name, urls] of Object.entries(ANIM_SRC)) {
+  for (const u of urls) {
     const pre = new Image();
-    pre.onerror = () => console.error('[pet] ANIM-PRELOAD-FAIL ' + u);
+    pre.onerror = () => console.error('[pet] PRELOAD-FAIL ' + name + ' → ' + u);
     pre.src = u;
-    ANIM_SRC[state].push(u);
   }
 }
-let animState = null, animTimer = null;
+
+/* ---------- 帧播放器：每帧时长可能不同，所以用递归 setTimeout ---------- */
+let animName = null, animTimer = null, animIdx = 0;
+function play(name) {
+  if (animName === name) return;             // 同一动作：继续播，不重启（避免每 500ms tick 重置动画）
+  animName = name;
+  if (animTimer) { clearTimeout(animTimer); animTimer = null; }
+  animIdx = 0;
+  const urls = ANIM_SRC[name];
+  if (!urls) { img.src = IDLE_SRC[name] || IDLE_SRC.idle; return; }   // 朝向等静态帧
+  img.src = urls[0];
+  tickFrame();
+}
+function tickFrame() {
+  const name = animName, a = ANIM[name];
+  animTimer = setTimeout(() => {
+    if (animName !== name) return;
+    animIdx = (animIdx + 1) % a.seq.length;
+    img.src = ANIM_SRC[name][animIdx];
+    tickFrame();
+  }, a.durs[animIdx]);
+}
 
 /* ---------- 节奏参数（?fast=1 测试用短阈值） ---------- */
 const FAST = new URLSearchParams(location.search).has('fast');
@@ -88,42 +101,35 @@ const NOD_AFTER   = (FAST ? 3 : 15) * 1000;   // 鼠标静止 15s → 打瞌睡
 const SLEEP_AFTER = (FAST ? 6 : 30) * 1000;   // 静止 30s → 趴下睡死
 
 /* ---------- 状态机 ----------
-   优先级：拖动(提溜) > 事件动画(欢呼/爱心) > 睡意(鼠标空闲) > 随机行为 > 朝向idle
-   鼠标一动就重新计时并立刻醒来 */
-let mode = 'idle';            // idle | nodding | sleeping | <行为键> | dragged
+   优先级：拖动 > hook 事件（瞬时反馈 > 工作态）> 睡意 > 自娱随机 > 朝向待机
+   mode      : idle | dragged | <动作名>（自娱行为 或 惊醒过渡）
+   drowsy    : null 清醒 | 'nod' 打瞌睡 | 'sleep' 睡死
+   eventMode : hook 事件驱动的动作（pi 侧来事件时设）
+   鼠标一动就重新计时，并立刻从睡意里醒过来 */
+let mode = 'idle';
 let look = 'front';
-let eventHoldUntil = 0;       // 事件动画保持
-let behaviorHoldUntil = 0;    // 随机行为保持
+let drowsy = null;
+let eventMode = null, eventKind = null, eventHoldUntil = 0, eventHoldPri = 0;
+let workFallback = null;            // 工作态兜底：瞬时反馈播完回到它（agent_settled 时清空）
+let behaviorHoldUntil = 0;
 let nextBehaviorAt = Date.now() + 2000 + Math.random() * 2500;
 let lastMouse = { x: -1, y: -1 };
 let lastActivity = Date.now();
 const dragged = () => mode === 'dragged';
-const busyNow = () => dragged() || Date.now() < eventHoldUntil;
 
 function frameName() {
-  if (mode === 'dragged') return 'picked_up';
   const now = Date.now();
-  if (now < eventHoldUntil) return mode;
-  if (mode === 'sleeping') return 'sleeping';
-  if (mode === 'nodding') return 'nodding_off';
-  if (now < behaviorHoldUntil && mode !== 'idle') return mode;
-  mode = 'idle';
-  return look;
+  if (mode === 'dragged') return 'picked_up';                  // 1 被拖动
+  if (eventMode && now < eventHoldUntil) return eventMode;     // 2 hook 事件
+  if (drowsy === 'sleep') return 'sleep';                      // 3 睡死
+  if (drowsy === 'nod') return 'nodding';                      // 4 打瞌睡
+  if (now < behaviorHoldUntil && mode !== 'idle') return mode; // 5 自娱 / 惊醒过渡
+  return look;                                                 // 6 朝向待机
 }
 function render() {
   const k = frameName();
   if (document.body.dataset.state !== k) document.body.dataset.state = k;   // 仅供调试观察
-  if (animState === k) return;              // 同状态：动画继续跑，不重启
-  animState = k;
-  if (animTimer) { clearInterval(animTimer); animTimer = null; }
-  const frames = ANIM_SRC[k];
-  if (!frames) { img.src = FRAME_SRC[k]; return; }   // 无动画定义 → 静态帧
-  let i = 0;
-  img.src = frames[0];
-  animTimer = setInterval(() => {
-    i = (i + 1) % frames.length;
-    img.src = frames[i];
-  }, ANIM[k][1]);
+  play(k);
 }
 
 /* ---------- 鼠标朝向 + 空闲检测（主进程 120ms 推送全局光标） ---------- */
@@ -132,9 +138,9 @@ window.buddy.onCursor(({ mx, my, px, py }) => {
   lastMouse = { x: mx, y: my };
   if (moved) {
     lastActivity = Date.now();
-    if (mode === 'sleeping' || mode === 'nodding') wake();     // 鼠标一动就醒
+    if (drowsy) wake();                                        // 鼠标一动就醒
   }
-  if (mode === 'idle') {                                        // 朝向跟随
+  if (mode === 'idle' && !drowsy && !eventMode) {               // 朝向跟随
     const cx = px + 55, cy = py + 55;
     const dx = mx - cx, dy = my - cy;
     let want = 'front';
@@ -145,30 +151,27 @@ window.buddy.onCursor(({ mx, my, px, py }) => {
   }
 });
 
+/* 醒来：先演一轮"坐立瞌睡惊醒"（末帧就是惊醒），再回到正常 */
 function wake() {
-  mode = 'cheering';                       // 醒来先伸个懒腰（欢呼帧代替）
-  render();
-  setTimeout(() => {
-    if (mode === 'cheering') { mode = 'idle'; look = 'front'; render(); }
-  }, 900);
+  drowsy = null;
+  mode = 'nodding';
+  behaviorHoldUntil = Date.now() + 2600;                        // 一轮 800+1000+800
+  nextBehaviorAt = Date.now() + 3200 + Math.random() * 3000;
   lastActivity = Date.now();
-  behaviorHoldUntil = Date.now() + 3000;
-  nextBehaviorAt = Date.now() + 3500 + Math.random() * 3500;
+  render();
 }
 
-/* ---------- 活跃期随机行为池 ---------- */
+/* ---------- 无 hook 时的自娱池（只在桌宠自己活着时用） ---------- */
 const IDLE_BEHAVIORS = [
-  ['walking',         3000, 3, null],
-  ['fast_running',    2000, 1, null],
-  ['munching_clover', 3000, 2, null],
-  ['eating_orange',   3000, 2, null],
-  ['spacing_out',     3500, 2, null],
-  ['orange_balancing',2500, 2, null],
-  ['drinking_coffee', 2500, 1, 'typing_laptop'],   // 咖啡续命 → 打工
-  ['typing_laptop',   4500, 1, null],
-  ['hot_spring',      6000, 0.5, null],            // 彩蛋级
+  ['walk',          3000, 3,   null],   // 漫步巡逻
+  ['run',           2000, 1,   null],   // 快跑冲刺
+  ['clover',        3200, 2,   null],   // 嚼三叶草
+  ['eating_orange', 3000, 2,   null],   // 吃橘子
+  ['coffee',        4000, 2,   null],   // 喝咖啡摸鱼
+  ['orange_trick',  2800, 2,   null],   // 顶橘绝活
+  ['spacing_out',   3500, 2,   null],   // 灵魂出窍发呆
+  ['hot_spring',    6000, 0.5, null],   // 泡温泉（彩蛋级，少见）
 ];
-const CHAIN_DUR = { typing_laptop: 4500 };
 function weightedPick(pool) {
   const p = pool || IDLE_BEHAVIORS;
   const total = p.reduce((s, b) => s + b[2], 0);
@@ -176,91 +179,108 @@ function weightedPick(pool) {
   for (const b of p) { if ((r -= b[2]) < 0) return b; }
   return p[0];
 }
-// 右键专用池：行为 + 欢呼 + 捧爱心（这两个原本只有事件动画才能看到）
-const RIGHT_POOL = IDLE_BEHAVIORS.concat([
-  ['cheering', 1500, 2, null],
-  ['offering_heart', 1600, 2, null],
-]);
-
-function playBehavior(preferSwap, pool) {
-  let pick = weightedPick(pool);
-  if (preferSwap && pick[0] === mode) pick = weightedPick(pool);   // 右键时尽量换个动作
-  const [name, dur, _w, chain] = pick;
+function playBehavior(preferSwap) {
+  let pick = weightedPick();
+  if (preferSwap && pick[0] === mode) pick = weightedPick();     // 右键时尽量换个动作
+  const [name, dur] = pick;
   mode = name;
-  lastActivity = Date.now();
+  // 注意：这里绝不能刷新 lastActivity —— 自娱行为每几秒触发一次，
+  // 一刷新 lastActivity 就永远到不了 15s/30s 的睡意阈值（旧版就是这么坏掉的）。
   behaviorHoldUntil = Date.now() + dur;
   nextBehaviorAt = behaviorHoldUntil + 2000 + Math.random() * 2500;
   render();
-  if (chain) {
-    setTimeout(() => {
-      if (mode === name) {
-        mode = chain;
-        behaviorHoldUntil = Date.now() + CHAIN_DUR[chain];
-        render();
-      }
-    }, dur);
-  }
 }
 
 /* ---------- 右键：换个动画 ---------- */
-document.addEventListener('contextmenu', (e) => e.preventDefault());   // 只屏蔽系统菜单（动画已在 mousedown(2) 切换）
+document.addEventListener('contextmenu', (e) => e.preventDefault());   // 只屏蔽系统菜单（切动作在 mousedown(2)）
+
+/* ---------- hook 事件（pi 侧推送） ----------
+   动作: [默认时长ms, 优先级, 类型]
+     once = 瞬时反馈，播完回工作态（若还在干活）或待机
+     work = 工作态，一直挂着直到下一个事件（时长只是兜底上限）
+
+   抢占规则（踩过的坑）：不能简单地"优先级低就忽略"——真实事件几乎同时到达
+   （session_start 到 agent_start 只隔零点几秒），长保持期会把后面的事件全吃掉，
+   结果卡皮巴拉一直捧着爱心不进入思考/打工。现在的规则：
+     ・同名事件在保持期内重复到达 → 忽略（防抖）
+     ・新事件总能接管（代表更新的状态）
+     ・例外：高优先级的瞬时反馈正在播时，低优先级事件让路（别把欢呼/生气掐掉） */
+const EVENT_ANIM = {
+  heart:       [2300, 2, 'once'],      // session_start    → 捧爱心打招呼
+  inspiration: [1800, 2, 'once'],      // 工具跑成功       → 灵光一现
+  angry_zen:   [2500, 3, 'once'],      // 工具跑失败       → 气到冒烟
+  cheering:    [3800, 3, 'once'],      // agent_settled    → 干完了欢呼
+  thinking:    [120000, 2, 'work'],    // agent_start      → 托腮思考
+  typing:      [120000, 2, 'work'],    // 工具执行中       → 敲键盘打工
+  spacing_out: [3000, 2, 'once'],      // 压缩上下文       → 发呆
+  sleep:       [3000, 1, 'once'],      // session 关闭     → 趴下睡
+};
+
+window.buddy.onPetEvent((e, ms) => {
+  const now = Date.now();
+  if (e === 'drag-lost') { endDrag(); return; }        // 主进程兜底：mouseup 丢失强制恢复
+  if (mode === 'dragged') return;                      // 拖动优先，事件不打扰
+  const cfg = EVENT_ANIM[e];
+  if (!cfg) return;
+  const [defMs, pri, kind] = cfg;
+  if (now < eventHoldUntil) {
+    if (e === eventMode) return;                       // 同名防抖
+    if (eventKind === 'once' && pri < eventHoldPri) return;   // 瞬时反馈播放中：低优先级让路
+  }
+  const dur = ms || defMs;
+  eventMode = e; eventKind = kind;
+  eventHoldUntil = now + dur; eventHoldPri = pri;
+  if (kind === 'work') workFallback = e;               // 记住工作态，供瞬时反馈返回
+  if (e === 'cheering' || e === 'sleep') workFallback = null;   // 干完了 / 收工：不再回工作态
+  lastActivity = now;
+  drowsy = null;
+  render();
+});
 
 /* ---------- 主循环（500ms tick） ---------- */
 setInterval(() => {
   const now = Date.now();
-  if (dragged() || now < eventHoldUntil) return;
+  if (dragged()) return;
+
+  // 事件保持期到点
+  if (eventMode && now >= eventHoldUntil) {
+    if (eventKind === 'once' && workFallback) {        // 还在干活 → 回到工作态
+      eventMode = workFallback;
+      eventKind = 'work';
+      eventHoldUntil = now + EVENT_ANIM[workFallback][0];
+      eventHoldPri = EVENT_ANIM[workFallback][1];
+      render();
+      return;
+    }
+    eventMode = null; eventKind = null; eventHoldPri = 0;
+  }
+  if (eventMode) return;                               // 事件占着，睡意/自娱都不掺和
 
   const idleMs = now - lastActivity;
-  if (idleMs > SLEEP_AFTER) {                       // 睡死
-    if (mode !== 'sleeping') { mode = 'sleeping'; render(); }
+  if (idleMs > SLEEP_AFTER) {                          // 睡死
+    if (drowsy !== 'sleep') { drowsy = 'sleep'; render(); }
     return;
   }
-  if (idleMs > NOD_AFTER) {                         // 打瞌睡
-    if (mode !== 'nodding') { mode = 'nodding'; render(); }
+  if (idleMs > NOD_AFTER) {                            // 打瞌睡
+    if (drowsy !== 'nod') { drowsy = 'nod'; render(); }
     return;
   }
-  // 活跃期：随机行为
-  if (now >= behaviorHoldUntil) {
+  if (drowsy) { drowsy = null; render(); }
+
+  if (now >= behaviorHoldUntil) {                      // 活跃期：自娱随机
     if (mode !== 'idle') { mode = 'idle'; render(); }
     if (now >= nextBehaviorAt) playBehavior();
   }
 }, 500);
 
-/* ---------- 事件：答完欢呼 / 打开问答送爱心 ---------- */
-// 事件动画：事件名 = 帧名（此前 main 发 'cheering'/'offering_heart' 而这里判 'cheer'/'greet'，名字对不上导致两个动画一直是哑的）
-// [默认时长ms, 优先级]：优先级高的能在保持期内打断低的——pi 秒答完时"干完欢呼"必须能中断"打工"，
-// 否则卡皮巴拉会一直打工、错过欢呼（实测踩到）。typing_laptop 时长即"最长打工"上限，兜底 pi 异常未发 settled。
-const EVENT_ANIM = {
-  typing_laptop:  [120000, 2],
-  cheering:       [3500, 3],
-  offering_heart: [1600, 2],
-  sleeping:       [3000, 2],
-};
-let eventHoldPri = 0;   // 当前事件动画优先级
-window.buddy.onPetEvent((e, ms) => {
-  const now = Date.now();
-  if (e === 'drag-lost') { endDrag(); return; }   // 主进程兜底：mouseup 丢失强制恢复
-  if (mode === 'dragged') return;                 // 拖动优先，事件不打扰
-  const anim = EVENT_ANIM[e];
-  const dur = ms || (anim && anim[0]);
-  if (!dur) return;
-  const pri = anim ? anim[1] : 2;
-  if (now < eventHoldUntil && pri <= eventHoldPri) return;   // 同级/更低：保持期内忽略（防抖）
-  mode = e;
-  eventHoldUntil = now + dur;
-  eventHoldPri = pri;
-  lastActivity = now;
-  render();
-});
-
 /* ---------- 拖动：被提溜（拖动全程算活动，不会睡着） ---------- */
 let down = null, dragging = false;
 document.addEventListener('mousedown', (e) => {
-  if (e.button === 2) {         // 右键：换个动画（mousedown 入口对轻点/按压都稳定）
-    if (mode !== 'dragged') playBehavior(true, RIGHT_POOL);
+  if (e.button === 2) {                                // 右键：换个动画（mousedown 入口对轻点/按压都稳定）
+    if (mode !== 'dragged') playBehavior(true);
     return;
   }
-  if (e.button !== 0) return;   // 其余只认左键
+  if (e.button !== 0) return;                          // 其余只认左键
   down = { x: e.clientX, y: e.clientY };
   dragging = false;
   lastActivity = Date.now();
@@ -295,10 +315,12 @@ document.addEventListener('mouseup', (e) => {
 });
 
 window.__petState = () => JSON.stringify({
-  mode, look, frame: frameName(), imgOK: img.complete && img.naturalWidth > 0, imgSrc: img.getAttribute('src'),
+  mode, look, frame: frameName(), drowsy, eventMode, workFallback,
+  imgOK: img.complete && img.naturalWidth > 0, imgSrc: img.getAttribute('src'),
   idleSec: Math.round((Date.now() - lastActivity) / 1000),
   behaviorHoldMs: Math.round(behaviorHoldUntil - Date.now()),
   nextBehaviorMs: Math.round(nextBehaviorAt - Date.now()),
+  eventHoldMs: Math.round(eventHoldUntil - Date.now()),
 });
 render();
 </script>

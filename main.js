@@ -172,7 +172,7 @@ function toggleChat() {
   chatWin.show();
   chatWin.focus();
   chatWin.webContents.send('focus-input');
-  petEvent('offering_heart');   // 打开问答，捧爱心迎接
+  petEvent('heart');   // 打开问答，捧爱心迎接
 }
 
 // ---------- 桌面宠物（常驻，不抢焦点） ----------
@@ -313,14 +313,19 @@ function petEvent(ev, ms) {
 // 扩展在 pi 进程里 POST 事件过来，桌宠据此演动画。见 ~/.pi/agent/extensions/kapybara-bridge.ts
 const PI_EVENT_PORT = 17898;
 const PI_EVENT_ANIM = {
-  agent_start:      'typing_laptop',    // pi 开始干活 → 打工（持续到 agent_settled）
-  agent_settled:    'cheering',         // pi 干完等你输入 → 欢呼（可打断打工）
-  session_start:    'offering_heart',   // 新 session → 捧爱心
-  session_shutdown: 'sleeping',         // session 关闭 → 睡觉
+  session_start:        'heart',        // 新 session → 捧爱心打招呼
+  agent_start:          'thinking',     // 开始想 → 托腮思考（持续态）
+  tool_execution_start: 'typing',       // 执行工具 → 敲键盘打工（持续态，盖过思考）
+  tool_execution_end:   'inspiration',  // 工具跑完 → 灵光一现（失败则 angry_zen，见下）
+  agent_settled:        'cheering',     // 真的干完了 → 欢呼（可打断工作态）
+  session_compact:      'spacing_out',  // 压缩上下文 → 灵魂出窍发呆
+  session_shutdown:     'sleep',        // session 关闭 → 趴下睡
 };
 
 function onPiEvent(ev) {
-  const anim = PI_EVENT_ANIM[ev && ev.type];
+  if (!ev || !ev.type) return;
+  let anim = PI_EVENT_ANIM[ev.type];
+  if (ev.type === 'tool_execution_end' && ev.ok === false) anim = 'angry_zen';   // 工具报错 → 气到冒烟
   if (!anim) return;
   console.log(`[kapybara-buddy] pi 事件 ${ev.type}${ev.cwd ? ' @ ' + ev.cwd : ''} → 动画 ${anim}`);
   petEvent(anim);   // 时长/优先级由 pet.html 的 EVENT_ANIM 决定
