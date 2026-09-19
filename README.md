@@ -1,6 +1,6 @@
 ---
 title: gemini-buddy 使用说明
-version: v0.4
+version: v0.5
 author: 胡嘉
 date: 2026-09-19
 ---
@@ -14,6 +14,7 @@ date: 2026-09-19
 | v0.2 | 2026-09-19 | 胡嘉 | 轻量重构：tkinter 浮窗 + Antigravity CLI（agy）问答，去掉 Electron |
 | v0.3 | 2026-09-19 | 胡嘉 | 回归 Electron 但自绘透明对话框：解决 macOS 无边框窗口无法键盘输入的坑；流式回答、覆盖式问答；支持 Windows |
 | v0.4 | 2026-09-19 | 胡嘉 | 多后端：新增 Pollinations 零注册零 key 免费网关自动兜底，Windows 无需安装/登录 agy |
+| v0.5 | 2026-09-19 | 胡嘉 | agy 默认用低思考档模型（gemini-3.8-flash-low）加速回答；回答区支持粗体/行内码渲染 |
 
 ## 链接
 - 无
@@ -76,6 +77,7 @@ npm start
 | `HOTKEY` | mac `Option+G` / win `Alt+G` | 全局快捷键 |
 | `WIN_W / WIN_H` | 640 / 400 | 窗口尺寸 |
 | `ANSWER_TIMEOUT_MS` | 180000 | 单次回答超时 |
+| `AGY_MODEL` | `gemini-3.8-flash-low` | agy 思考档位，low 最快；置空用 agy 默认；环境变量 `GB_AGY_MODEL` 可覆盖 |
 
 ## 网络
 

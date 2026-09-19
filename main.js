@@ -17,6 +17,8 @@ const HOTKEY = isMac ? 'Option+G' : 'Alt+G';
 const WIN_W = 640;
 const WIN_H = 400;
 const ANSWER_TIMEOUT_MS = 180000;
+// agy 思考档位：low 最快（可选 gemini-3.8-flash-low/medium/high，置空则用 agy 默认）
+const AGY_MODEL = process.env.GB_AGY_MODEL || 'gemini-3.8-flash-low';
 
 let win = null;
 let busy = false;
@@ -150,7 +152,11 @@ function runAgy(question) {
   }
 
   let out = '';
-  childProc = spawn(AGY, ['-p', question], { timeout: ANSWER_TIMEOUT_MS });
+  const args = [
+    ...(AGY_MODEL ? ['--model', AGY_MODEL] : []),
+    '-p', question,
+  ];
+  childProc = spawn(AGY, args, { timeout: ANSWER_TIMEOUT_MS });
   childProc.stdout.setEncoding('utf8');
   childProc.stdout.on('data', (d) => {
     out += d;

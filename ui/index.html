@@ -106,10 +106,19 @@
   });
 
   let firstChunk = true;
+  let raw = '';
+  function renderMarkdown(src) {
+    // 极简 markdown：转义后支持 **粗体** 和 `行内码`，其余原样
+    const esc = src.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return esc
+      .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+      .replace(/`([^`]+)`/g, '<code>$1</code>');
+  }
   window.buddy.onAnswerChunk((t) => {
-    if (firstChunk) { a.textContent = ''; a.classList.remove('dim'); firstChunk = false; }
+    if (firstChunk) { raw = ''; a.classList.remove('dim'); firstChunk = false; }
+    raw += t;
     a.classList.add('thinking');
-    a.appendChild(document.createTextNode(t));
+    a.innerHTML = renderMarkdown(raw);
     a.scrollTop = a.scrollHeight;
   });
   window.buddy.onAnswerDone(() => {
