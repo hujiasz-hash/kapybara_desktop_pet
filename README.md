@@ -1,6 +1,6 @@
 ---
 title: gemini-buddy 使用说明
-version: v0.2
+version: v0.3
 author: 胡嘉
 date: 2026-09-19
 ---
@@ -11,7 +11,8 @@ date: 2026-09-19
 | 版本 | 日期 | 作者 | 改动点 |
 | --- | --- | --- | --- |
 | v0.1 | 2026-09-19 | 胡嘉 | 首版：Option+G 呼出的 Gemini 桌面小窗（Electron 内嵌网页） |
-| v0.2 | 2026-09-19 | 胡嘉 | 轻量重构：tkinter 浮窗 + Antigravity CLI（agy）问答，去掉 Electron；新增失焦自动隐藏 |
+| v0.2 | 2026-09-19 | 胡嘉 | 轻量重构：tkinter 浮窗 + Antigravity CLI（agy）问答，去掉 Electron |
+| v0.3 | 2026-09-19 | 胡嘉 | 回归 Electron 但自绘透明对话框：解决 macOS 无边框窗口无法键盘输入的坑；流式回答、覆盖式问答；支持 Windows |
 
 ## 链接
 - 无
@@ -20,11 +21,11 @@ date: 2026-09-19
 
 ## 是什么
 
-按 `Option+G` 呼出一个置顶小浮窗，打字提问回车，后台调用 Antigravity CLI（`agy`，复用你的 Google 账号登录态，免 API key），回答直接显示在窗口里。点窗口外任意地方自动隐藏；回答还在生成时先不藏，答完弹在屏幕上（不抢键盘焦点）。
+按 `Option+G`（Windows: `Alt+G`）呼出一个半透明对话框，打字回车提问，后台调用 Antigravity CLI（`agy`，复用 Google 账号登录态，免 API key），回答**流式**显示在窗口里，**每次提问覆盖上一条**。点窗口外自动隐藏。
 
-内存占用约 50MB，无 node_modules。
+技术底座：Electron（透明无边框窗 + 系统级全局快捷键，无需辅助功能授权）+ agy headless 模式。
 
-## 启动 / 停止
+## macOS 启动 / 停止
 
 ```bash
 cd ~/Desktop/Working/2026-09_gemini-buddy
@@ -33,42 +34,57 @@ cd ~/Desktop/Working/2026-09_gemini-buddy
 ./start.sh log    # 看日志
 ```
 
+## Windows 部署
+
+1. 安装 Node.js LTS（nodejs.org 下载即可）
+2. 安装 Antigravity CLI 并用 Google 账号登录（参照 https://antigravity.google/docs/cli/install ，终端运行 `agy` 完成登录）
+3. 把整个项目文件夹拷到 Windows 机器，在该目录下：
+
+```bat
+npm install
+npm start
+```
+
+或直接双击 `start.bat`。之后 `Alt+G` 呼出。
+
 ## 快捷键与交互
 
 | 操作 | 效果 |
 | --- | --- |
-| `Option+G` | 呼出 / 隐藏，呼出后直接打字 |
-| `回车` | 发送问题，回答追加在窗口内（保留历史问答） |
+| `Option+G` / `Alt+G` | 呼出 / 隐藏，呼出后光标已在输入框 |
+| `Enter` | 发送问题，回答流式显示，**覆盖上一条** |
 | `Esc` | 关闭窗口 |
-| 点窗口外 | 自动隐藏（回答生成中除外，答完再显示） |
-| 窗口顶部 | 按住拖动位置 |
+| 点窗口外 | 自动隐藏（回答生成中不隐藏，答完停留 4 秒） |
+| 点击左下角蓝点 | 中止当前回答 |
+| 拖动顶部栏 | 移动窗口 |
 
-窗口出现在鼠标当前所在屏幕，居中偏上。每次提问是独立会话（无上下文）。
+窗口出现在鼠标当前所在屏幕，居中偏上。每次提问独立会话（无上下文）。
 
-## 依赖（本机已全部就绪）
-
-- `python3` + tkinter（系统自带）
-- `pynput`（全局快捷键，已装 v1.8.1）
-- `agy`（Antigravity CLI v1.2.3，`~/.local/bin/agy`，已 Google 账号登录）
-
-pynput 快捷键需要辅助功能授权：若 `Option+G` 无反应，到「系统设置 → 隐私与安全性 → 辅助功能」给运行脚本的终端勾选。
-
-## 配置（buddy.py 顶部）
+## 配置（main.js 顶部）
 
 | 常量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `HOTKEY` | `'<alt>+g'` | 全局快捷键，pynput 格式 |
-| `WIN_W / WIN_H` | 640 / 440 | 窗口尺寸 |
-| `ANSWER_TIMEOUT` | 180 | 单次回答超时（秒） |
+| `HOTKEY` | mac `Option+G` / win `Alt+G` | 全局快捷键 |
+| `WIN_W / WIN_H` | 640 / 400 | 窗口尺寸 |
+| `ANSWER_TIMEOUT_MS` | 180000 | 单次回答超时 |
+
+## 网络
+
+默认走系统代理。若需强制代理：
+
+```bash
+GB_PROXY=http://127.0.0.1:7898 npm start
+```
 
 ## 自动化测试
 
 ```bash
-python3 buddy.py --test "2的10次方等于几？只回答数字"
+GB_TEST_ASK="1+1等于几" npm start   # 自动呼出、提问、打印回答后退出
+GB_DEBUG_SHOT=/tmp/shot.png npm start   # 自动呼出、截图后退出
 ```
-
-建 UI → 发问题 → 等 agy 回答 → 打印回答区内容后退出。
 
 ## 历史
 
-- v0.1 为 Electron 内嵌 gemini.google.com 网页方案（commit 7d4ffba），因占用高（~300MB）退役；git 历史可随时找回（`git checkout 7d4ffba -- main.js package.json`）。
+- v0.1 Electron 内嵌网页方案（commit 7d4ffba）：重（~300MB）退役
+- v0.2 tkinter + agy（a2d7a75）：macOS 无边框窗口不能成为 key window（无法键盘输入），PyObjC swizzle 补丁路线过深，放弃；Windows 上 tkinter 其实可用，但为统一技术栈放弃
+- v0.3 现方案：Electron 自绘 UI，快捷键/透明/输入全部原生支持，跨平台一致

@@ -1,9 +1,13 @@
 {
   "name": "gemini-buddy",
-  "version": "0.2.0",
-  "description": "Option+G 呼出的 Gemini 快速问答浮窗（tkinter + Antigravity CLI）",
+  "version": "0.3.0",
+  "description": "Option+G/Alt+G 呼出的 Gemini 快速问答浮窗（Electron + Antigravity CLI，跨平台）",
+  "main": "main.js",
   "scripts": {
-    "start": "python3 buddy.py"
+    "start": "electron ."
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^40.0.0"
+  }
 }

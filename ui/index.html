@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: transparent; height: 100%; overflow: hidden;
+               font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  #panel {
+    height: 100%;
+    display: flex; flex-direction: column;
+    background: rgba(26, 27, 30, 0.88);
+    backdrop-filter: blur(24px);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  /* 顶部：可拖动 + 标题 */
+  #bar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 9px 16px 7px;
+    -webkit-app-region: drag;
+    user-select: none;
+  }
+  #bar .title { color: #9aa0a6; font-size: 11px; letter-spacing: 0.5px; }
+  #bar .hint  { color: #5f6368; font-size: 10px; }
+  /* 输入区 */
+  #inputrow {
+    display: flex; align-items: center; gap: 10px;
+    margin: 0 16px 10px;
+    padding: 10px 14px;
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+  }
+  #inputrow:focus-within { border-color: rgba(138, 180, 248, 0.6); }
+  #dot { width: 8px; height: 8px; border-radius: 50%;
+         background: #8ab4f8; flex: none; }
+  #q {
+    flex: 1; background: transparent; border: none; outline: none;
+    color: #e8eaed; font-size: 15px; caret-color: #8ab4f8;
+  }
+  #q::placeholder { color: #6e7175; }
+  /* 回答区 */
+  #a {
+    flex: 1; margin: 0 16px 12px; padding: 4px 2px;
+    overflow-y: auto;
+    color: #dee1e6; font-size: 13.5px; line-height: 1.65;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  #a .dim { color: #8b8f94; }
+  #a::-webkit-scrollbar { width: 6px; }
+  #a::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+  /* 思考动画 */
+  #a.thinking::after {
+    content: '▍'; color: #8ab4f8;
+    animation: blink 1s steps(2) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+</style>
+</head>
+<body>
+<div id="panel">
+  <div id="bar">
+    <span class="title">✦ GEMINI BUDDY</span>
+    <span class="hint">Esc 关闭 · 点外部隐藏 · Enter 提问</span>
+  </div>
+  <div id="inputrow">
+    <span id="dot"></span>
+    <input id="q" placeholder="问点什么，回车发送…" spellcheck="false">
+  </div>
+  <div id="a"><span class="dim">回答会显示在这里，每次提问覆盖上一条。</span></div>
+</div>
+<script>
+  const q = document.getElementById('q');
+  const a = document.getElementById('a');
+  const dot = document.getElementById('dot');
+  window.__test = { done: false };
+
+  function setDim(text) {
+    a.innerHTML = '';
+    const s = document.createElement('span');
+    s.className = 'dim';
+    s.textContent = text;
+    a.appendChild(s);
+  }
+
+  async function submit() {
+    const text = q.value.trim();
+    if (!text) return;
+    const r = await window.buddy.ask(text);
+    if (!r.ok && r.reason === 'busy') return;
+    q.value = '';
+    a.textContent = '';
+    a.classList.add('thinking');
+    window.__test.done = false;
+  }
+
+  q.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') submit();
+    if (e.key === 'Escape') window.buddy.hide();
+    e.stopPropagation();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') window.buddy.hide();
+  });
+
+  let firstChunk = true;
+  window.buddy.onAnswerChunk((t) => {
+    if (firstChunk) { a.textContent = ''; a.classList.remove('dim'); firstChunk = false; }
+    a.classList.add('thinking');
+    a.appendChild(document.createTextNode(t));
+    a.scrollTop = a.scrollHeight;
+  });
+  window.buddy.onAnswerDone(() => {
+    a.classList.remove('thinking');
+    window.__test.done = true;
+  });
+  window.buddy.onFocusInput(() => {
+    setTimeout(() => q.focus(), 60);
+  });
+  dot.addEventListener('click', () => window.buddy.stop());
+  q.focus();
+</script>
+</body>
+</html>
