@@ -16,6 +16,7 @@
 <script>
 /* ---------- 帧库（18 动作，420x420） ---------- */
 const FRAME_FILES = {
+  idle:     'frame_01_idle_front.png',   // 防御：mode 意外为 idle 时不落空
   front:    'frame_01_idle_front.png',
   left:     'frame_02_look_left.png',
   right:    'frame_03_look_right.png',
@@ -36,11 +37,14 @@ const FRAME_FILES = {
   eating_orange: 'frame_18_eating_orange.png',
 };
 const img = document.createElement('img');
+img.onerror = () => console.error('[pet] FRAME-FAIL src=' + img.getAttribute('src') + ' mode=' + mode + ' look=' + look);
 img.className = 'on';
 document.body.appendChild(img);
 const FRAME_SRC = {};
 for (const [key, file] of Object.entries(FRAME_FILES)) {
-  new Image().src = 'ui/frames/' + file;              // 预热
+  const pre = new Image();
+  pre.onerror = () => console.error('[pet] PRELOAD-FAIL ' + key + ' -> ' + file);
+  pre.src = 'ui/frames/' + file;                      // 预热 + 校验
   FRAME_SRC[key] = 'ui/frames/' + file;
 }
 
@@ -68,7 +72,7 @@ function frameName() {
   if (now < eventHoldUntil) return mode;
   if (mode === 'sleeping') return 'sleeping';
   if (mode === 'nodding') return 'nodding_off';
-  if (now < behaviorHoldUntil) return mode;
+  if (now < behaviorHoldUntil && mode !== 'idle') return mode;
   mode = 'idle';
   return look;
 }
@@ -188,6 +192,7 @@ document.addEventListener('mousedown', (e) => {
 });
 function endDrag() {
   mode = 'idle'; look = 'front';
+  behaviorHoldUntil = 0;   // 拖动打断行为：保持期一并作废
   window.buddy.petDragEnd();
   down = null;
   dragging = false;
@@ -212,7 +217,7 @@ document.addEventListener('mouseup', (e) => {
 });
 
 window.__petState = () => JSON.stringify({
-  mode, look,
+  mode, look, frame: frameName(), imgOK: img.complete && img.naturalWidth > 0, imgSrc: img.getAttribute('src'),
   idleSec: Math.round((Date.now() - lastActivity) / 1000),
   behaviorHoldMs: Math.round(behaviorHoldUntil - Date.now()),
   nextBehaviorMs: Math.round(nextBehaviorAt - Date.now()),

@@ -279,7 +279,7 @@ app.whenReady().then(() => {
         const st = await petWin.webContents.executeJavaScript('window.__petState ? window.__petState() : "no fn"').catch(e => 'err ' + e.message);
         console.log('[pet-state]', st);
       }
-    }, 2000);
+    }, 300);
   }
   // 鼠标推送：宠物朝向跟随（120ms）+ 拖动泄漏兜底
   setInterval(() => {
