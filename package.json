@@ -1,0 +1,13 @@
+{
+  "name": "gemini-buddy",
+  "version": "0.1.0",
+  "description": "快捷键呼出的桌面 Gemini 快速问答小窗",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^38.0.0"
+  }
+}
