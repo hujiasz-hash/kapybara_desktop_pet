@@ -4,8 +4,8 @@ cd "$(dirname "$0")" || exit 1
 
 case "${1:-start}" in
   start)
-    if pgrep -f "python3 .*buddy\.py" >/dev/null 2>&1; then
-      echo "gemini-buddy 已在运行 (pid $(pgrep -f 'python3 .*buddy\.py' | head -1))"
+    if pgrep -f "buddy\.py" >/dev/null 2>&1; then
+      echo "gemini-buddy 已在运行 (pid $(pgrep -f 'buddy\.py' | head -1))"
     else
       nohup python3 buddy.py >> "$HOME/.gemini-buddy.log" 2>&1 &
       disown
@@ -13,8 +13,8 @@ case "${1:-start}" in
     fi
     ;;
   stop)
-    if pgrep -f "python3 .*buddy\.py" >/dev/null 2>&1; then
-      pkill -f "python3 .*buddy\.py" && echo "已停止"
+    if pgrep -f "buddy\.py" >/dev/null 2>&1; then
+      pkill -f "buddy\.py" && echo "已停止"
     else
       echo "未在运行"
     fi

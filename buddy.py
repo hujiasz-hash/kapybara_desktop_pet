@@ -16,6 +16,10 @@ import threading
 import time
 import tkinter as tk
 
+
+def log(msg):
+    print(f'[{time.strftime("%H:%M:%S")}] {msg}', file=sys.stderr, flush=True)
+
 # ---------- 配置 ----------
 HOTKEY = '<alt>+g'             # Option+G 呼出/隐藏，可改（如 '<ctrl>+<alt>+g'）
 WIN_W, WIN_H = 640, 440
@@ -111,11 +115,31 @@ class Buddy:
         r.bind('<Escape>', lambda e: self.hide())
 
         # ---- 全局快捷键（后台线程 -> 队列 -> tk 主线程）----
+        # 不用 GlobalHotKeys：①它丢弃 injected 事件；②Option+G 在 mac 上字符
+        # 是 '©' 不是 'g'，永远匹配不上。改为：G 键 vk=5 + 实时读取系统修饰键
+        # 状态里带 Option 位即触发，不受事件顺序/注入影响。
         try:
             from pynput import keyboard
-            hk = keyboard.GlobalHotKeys({HOTKEY: lambda: self.q.put(self.toggle)})
-            hk.daemon = True
-            hk.start()
+            import Quartz
+
+            KEY_G_VK = 5
+            ALT_MASK = Quartz.kCGEventFlagMaskAlternate
+
+            def _alt_held():
+                return bool(Quartz.CGEventSourceFlagsState(
+                    Quartz.kCGEventSourceStateCombinedSessionState) & ALT_MASK)
+
+            def _press(key, injected=False):
+                if getattr(key, 'vk', None) == KEY_G_VK and _alt_held():
+                    self.q.put(self.toggle)
+
+            def _release(key, injected=False):
+                pass
+
+            lst = keyboard.Listener(on_press=_press, on_release=_release)
+            lst.daemon = True
+            lst.start()
+            log(f'全局快捷键已注册: Option+G (vk={KEY_G_VK}, 实时flags方案)')
         except Exception as e:
             print(f'[gemini-buddy] 全局快捷键不可用: {e}\n'
                   '  提示: pip3 install pynput；并在 系统设置→隐私与安全性→辅助功能 '
@@ -133,6 +157,7 @@ class Buddy:
         self.root.geometry(f'{WIN_W}x{WIN_H}+{x}+{y}')
 
     def show(self, focus=True):
+        log('show()')
         self._place()
         self.root.deiconify()
         self.root.lift()
@@ -143,6 +168,7 @@ class Buddy:
         self.visible = True
 
     def hide(self):
+        log('hide()')
         self.root.withdraw()
         self.visible = False
 
