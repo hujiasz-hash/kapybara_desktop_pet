@@ -13,6 +13,7 @@ const fs = require('fs');
 const os = require('os');
 
 const isMac = process.platform === 'darwin';
+const PET_DEBUG_LOG = path.join(os.tmpdir(), 'pet-debug.log');   // Windows 没有 /tmp
 const HOTKEY = isMac ? 'Option+G' : 'Alt+G';
 const CHAT_W = 640;
 const CHAT_H = 400;
@@ -249,13 +250,13 @@ function createPetWindow() {
     }
   });
   petWin.webContents.on('console-message', (_e, _lvl, msg) => {
-    fs.appendFileSync('/tmp/pet-debug.log', `[${_lvl}] ${msg}\n`);
+    fs.appendFileSync(PET_DEBUG_LOG, `[${_lvl}] ${msg}\n`);
   });
   petWin.webContents.on('console-message', (_e, level, msg, line, src) => {
     if (level >= 2 || msg.includes('[pet]')) console.log(`[pet-console:${level}] ${msg} (${src.split('/').pop()}:${line})`);
   });
   petWin.webContents.on('console-message', (_e, level, msg) => {
-    if (level >= 2 || msg.includes('[pet]')) fs.appendFileSync('/tmp/pet-debug.log', `[${level}] ${msg}\n`);
+    if (level >= 2 || msg.includes('[pet]')) fs.appendFileSync(PET_DEBUG_LOG, `[${level}] ${msg}\n`);
   });
   petWin.showInactive();         // 显示但不夺焦点
   petWin.on('closed', () => { petWin = null; });
