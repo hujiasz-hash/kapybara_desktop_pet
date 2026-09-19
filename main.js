@@ -210,6 +210,9 @@ function createPetWindow() {
   petWin.webContents.on('console-message', (_e, level, msg, line, src) => {
     if (level >= 2 || msg.includes('[pet]')) console.log(`[pet-console:${level}] ${msg} (${src.split('/').pop()}:${line})`);
   });
+  petWin.webContents.on('console-message', (_e, level, msg) => {
+    if (level >= 2 || msg.includes('[pet]')) fs.appendFileSync('/tmp/pet-debug.log', `[${level}] ${msg}\n`);
+  });
   petWin.showInactive();         // 显示但不夺焦点
   petWin.on('closed', () => { petWin = null; });
 }
@@ -269,6 +272,14 @@ app.whenReady().then(() => {
     }).show();
   }
 
+  if (process.env.GB_PET_DEBUG) {
+    setInterval(async () => {
+      if (petWin && !petWin.isDestroyed()) {
+        const st = await petWin.webContents.executeJavaScript('window.__petState ? window.__petState() : "no fn"').catch(e => 'err ' + e.message);
+        console.log('[pet-state]', st);
+      }
+    }, 2000);
+  }
   // 鼠标推送：宠物朝向跟随（120ms）
   setInterval(() => {
     const p = screen.getCursorScreenPoint();

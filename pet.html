@@ -56,7 +56,7 @@ let mode = 'idle';            // idle | nodding | sleeping | <行为键> | dragg
 let look = 'front';
 let eventHoldUntil = 0;       // 事件动画保持
 let behaviorHoldUntil = 0;    // 随机行为保持
-let nextBehaviorAt = Date.now() + 3500 + Math.random() * 3500;
+let nextBehaviorAt = Date.now() + 2000 + Math.random() * 2500;
 let lastMouse = { x: -1, y: -1 };
 let lastActivity = Date.now();
 const dragged = () => mode === 'dragged';
@@ -145,7 +145,7 @@ setInterval(() => {
       const [name, dur, _w, chain] = weightedPick();
       mode = name;
       behaviorHoldUntil = now + dur;
-      nextBehaviorAt = behaviorHoldUntil + 3500 + Math.random() * 4000;
+      nextBehaviorAt = behaviorHoldUntil + 2000 + Math.random() * 2500;
       render();
       if (chain) {
         setTimeout(() => {
@@ -201,6 +201,12 @@ document.addEventListener('mouseup', () => {
   dragging = false;
 });
 
+window.__petState = () => JSON.stringify({
+  mode, look,
+  idleSec: Math.round((Date.now() - lastActivity) / 1000),
+  behaviorHoldMs: Math.round(behaviorHoldUntil - Date.now()),
+  nextBehaviorMs: Math.round(nextBehaviorAt - Date.now()),
+});
 render();
 </script>
 </body>
