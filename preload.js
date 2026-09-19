@@ -10,4 +10,5 @@ contextBridge.exposeInMainWorld('buddy', {
   onAnswerChunk: (cb) => ipcRenderer.on('answer-chunk', (_e, t) => cb(t)),
   onAnswerDone: (cb) => ipcRenderer.on('answer-done', () => cb()),
   onCursor: (cb) => ipcRenderer.on('cursor', (_e, pos) => cb(pos)),
+  onPetEvent: (cb) => ipcRenderer.on('pet-event', (_e, ev) => cb(ev)),
 });

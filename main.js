@@ -44,6 +44,7 @@ async function runPollinations(question) {
   const done = () => {
     busy = false;
     if (chatWin && !chatWin.isDestroyed()) chatWin.webContents.send('answer-done');
+    petEvent('cheering');   // 答完了欢呼庆祝
     setTimeout(() => {
       if (chatWin && chatWin.isVisible() && !chatWin.isFocused()) chatWin.hide();
     }, 4000);
@@ -169,6 +170,7 @@ function toggleChat() {
   chatWin.show();
   chatWin.focus();
   chatWin.webContents.send('focus-input');
+  petEvent('offering_heart');   // 打开问答，捧爱心迎接
 }
 
 // ---------- 桌面宠物（常驻，不抢焦点） ----------
@@ -222,6 +224,10 @@ ipcMain.on('pet-drag', (_e, dx, dy) => {
   petWin.setPosition(x + Math.round(dx), y + Math.round(dy));
 });
 ipcMain.on('pet-click', () => toggleChat());
+
+function petEvent(ev) {
+  if (petWin && !petWin.isDestroyed()) petWin.webContents.send('pet-event', ev);
+}
 
 // ---------- 生命周期 ----------
 app.whenReady().then(() => {
