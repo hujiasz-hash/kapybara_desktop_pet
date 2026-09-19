@@ -202,7 +202,12 @@ function createPetWindow() {
   // 初始位置：主屏右上角
   const wa = screen.getPrimaryDisplay().workArea;
   petWin.setPosition(wa.x + wa.width - 130, wa.y + 70);
+  console.log(`[gemini-buddy] pet 初始=(${wa.x + wa.width - 130}, ${wa.y + 70}) workArea=${wa.width}x${wa.height}+${wa.x}+${wa.y}`);
+  petWin.webContents.on('console-message', (_e, _lvl, msg) => {
+    fs.appendFileSync('/tmp/pet-debug.log', `[${_lvl}] ${msg}\n`);
+  });
   petWin.showInactive();         // 显示但不夺焦点
+  petWin.on('move', absorbPetDragCorrection);
   petWin.on('closed', () => { petWin = null; });
 }
 
@@ -219,19 +224,36 @@ ipcMain.handle('stop', () => {
   if (childProc) childProc.kill();
 });
 // 拖动：绝对坐标（按下时窗口位置 + 鼠标净位移），边缘 clamp 不会累积漂移
-let petDrag = null;
+let petDrag = null;   // {sx, sy, x, y, last}
 ipcMain.on('pet-drag-start', (_e, sx, sy) => {
   if (!petWin) return;
   const [x, y] = petWin.getPosition();
-  petDrag = { sx, sy, x, y };
+  petDrag = { sx, sy, x, y, last: null };
 });
 ipcMain.on('pet-drag-move', (_e, sx, sy) => {
   if (!petDrag || !petWin) return;
-  petWin.setPosition(
-    Math.round(petDrag.x + sx - petDrag.sx),
-    Math.round(petDrag.y + sy - petDrag.sy)
-  );
+  // 限制在工作区内（留 6px 边距）：防止拖进台前调度区域导致闪烁、
+  // 也避免宠物被拖到半截出屏找不回来
+  const disp = screen.getDisplayNearestPoint({ x: sx, y: sy });
+  const wa = disp.workArea;
+  const m = 6;
+  let x = Math.round(petDrag.x + sx - petDrag.sx);
+  let y = Math.round(petDrag.y + sy - petDrag.sy);
+  x = Math.max(wa.x + m, Math.min(x, wa.x + wa.width - PET_SIZE - m));
+  y = Math.max(wa.y + m, Math.min(y, wa.y + wa.height - PET_SIZE - m));
+  petWin.setPosition(x, y);
+  petDrag.last = { sx, sy };
 });
+// macOS 台前调度会把窗口从它的图标区"弹回"到系统允许的位置：
+// 监听 move，把系统修正后的实际位置吸收进拖动基准——
+// 否则 setPosition 和系统弹回逐帧打架，宠物会闪烁
+function absorbPetDragCorrection() {
+  if (!petDrag || !petWin || !petDrag.last) return;
+  const [x, y] = petWin.getPosition();
+  petDrag.x = Math.round(x - (petDrag.last.sx - petDrag.sx));
+  petDrag.y = Math.round(y - (petDrag.last.sy - petDrag.sy));
+}
+ipcMain.on('pet-drag-end', () => { petDrag = null; });
 ipcMain.on('pet-drag-end', () => { petDrag = null; });
 ipcMain.on('pet-click', () => toggleChat());
 
