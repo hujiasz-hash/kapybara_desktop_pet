@@ -128,6 +128,33 @@ function weightedPick() {
   return IDLE_BEHAVIORS[0];
 }
 
+function playBehavior(preferSwap) {
+  let pick = weightedPick();
+  if (preferSwap && pick[0] === mode) pick = weightedPick();   // 右键时尽量换个动作
+  const [name, dur, _w, chain] = pick;
+  mode = name;
+  lastActivity = Date.now();
+  behaviorHoldUntil = Date.now() + dur;
+  nextBehaviorAt = behaviorHoldUntil + 2000 + Math.random() * 2500;
+  render();
+  if (chain) {
+    setTimeout(() => {
+      if (mode === name) {
+        mode = chain;
+        behaviorHoldUntil = Date.now() + CHAIN_DUR[chain];
+        render();
+      }
+    }, dur);
+  }
+}
+
+/* ---------- 右键：换个动画 ---------- */
+document.addEventListener('contextmenu', (e) => {
+  e.preventDefault();                       // 屏蔽系统右键菜单
+  if (mode === 'dragged') return;           // 拖动中不打扰
+  playBehavior(true);
+});
+
 /* ---------- 主循环（500ms tick） ---------- */
 setInterval(() => {
   const now = Date.now();
@@ -145,22 +172,7 @@ setInterval(() => {
   // 活跃期：随机行为
   if (now >= behaviorHoldUntil) {
     if (mode !== 'idle') { mode = 'idle'; render(); }
-    if (now >= nextBehaviorAt) {
-      const [name, dur, _w, chain] = weightedPick();
-      mode = name;
-      behaviorHoldUntil = now + dur;
-      nextBehaviorAt = behaviorHoldUntil + 2000 + Math.random() * 2500;
-      render();
-      if (chain) {
-        setTimeout(() => {
-          if (mode === name) {
-            mode = chain;
-            behaviorHoldUntil = Date.now() + CHAIN_DUR[chain];
-            render();
-          }
-        }, dur);
-      }
-    }
+    if (now >= nextBehaviorAt) playBehavior();
   }
 }, 500);
 
@@ -184,6 +196,7 @@ window.buddy.onPetEvent((e) => {
 /* ---------- 拖动：被提溜（拖动全程算活动，不会睡着） ---------- */
 let down = null, dragging = false;
 document.addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;   // 只认左键；右键留给"换动画"
   down = { x: e.clientX, y: e.clientY };
   dragging = false;
   lastActivity = Date.now();
