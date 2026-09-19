@@ -149,11 +149,7 @@ function playBehavior(preferSwap) {
 }
 
 /* ---------- 右键：换个动画 ---------- */
-document.addEventListener('contextmenu', (e) => {
-  e.preventDefault();                       // 屏蔽系统右键菜单
-  if (mode === 'dragged') return;           // 拖动中不打扰
-  playBehavior(true);
-});
+document.addEventListener('contextmenu', (e) => e.preventDefault());   // 只屏蔽系统菜单（动画已在 mousedown(2) 切换）
 
 /* ---------- 主循环（500ms tick） ---------- */
 setInterval(() => {
@@ -196,7 +192,11 @@ window.buddy.onPetEvent((e) => {
 /* ---------- 拖动：被提溜（拖动全程算活动，不会睡着） ---------- */
 let down = null, dragging = false;
 document.addEventListener('mousedown', (e) => {
-  if (e.button !== 0) return;   // 只认左键；右键留给"换动画"
+  if (e.button === 2) {         // 右键：换个动画（mousedown 入口对轻点/按压都稳定）
+    if (mode !== 'dragged') playBehavior(true);
+    return;
+  }
+  if (e.button !== 0) return;   // 其余只认左键
   down = { x: e.clientX, y: e.clientY };
   dragging = false;
   lastActivity = Date.now();
@@ -223,6 +223,7 @@ document.addEventListener('mousemove', (e) => {
   }
 });
 document.addEventListener('mouseup', (e) => {
+  if (e.button !== 0) return;   // 只认左键；右键松开不得触发拖动收尾
   try { document.body.releasePointerCapture(e.pointerId); } catch (_) {}
   const wasClick = down && !dragging;
   endDrag();
