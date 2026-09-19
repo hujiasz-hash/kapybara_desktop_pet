@@ -3,114 +3,101 @@
 <head>
 <meta charset="utf-8">
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
+  * { margin: 0; padding: 0; box-sizing: border-box; border-radius: 0 !important; }
   html, body { background: transparent; height: 100%; overflow: hidden;
-               font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+               font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+               letter-spacing: 0.3px; }
+  /* 像素风外框：深棕粗边 + 内衬高光边 */
+  #frame {
+    height: 100%;
+    background: #5c4030;
+    padding: 3px;
+    box-shadow: inset 0 0 0 1px #2e2318;
+  }
   #panel {
     height: 100%;
     display: flex; flex-direction: column;
-    background: rgba(24, 25, 28, 0.68);
-    backdrop-filter: blur(32px) saturate(1.2);
-    border: 1px solid rgba(255, 255, 255, 0.13);
-    border-radius: 14px;
+    background: rgba(26, 27, 30, 0.94);
+    border: 2px solid #8a6844;
     overflow: hidden;
   }
-  /* 顶部：标题区（可拖动） + 卡皮巴拉 */
+  /* 标题条 */
   #bar {
-    display: flex; align-items: flex-end; justify-content: space-between;
-    padding: 6px 10px 0 16px;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 14px;
+    background: rgba(176, 137, 104, 0.16);
+    border-bottom: 2px solid #8a6844;
     -webkit-app-region: drag;
     user-select: none;
   }
-  .brand { display: flex; flex-direction: column; gap: 3px; padding-bottom: 8px; }
-  .brand .title {
-    color: #c9a87b; font-size: 11.5px; letter-spacing: 1.5px; font-weight: 600;
-  }
-  .brand .hint  { color: #6e7175; font-size: 10px; }
-  /* ---------- 卡皮巴拉（像素风） ---------- */
-  #capy-wrap { position: relative; width: 100px; height: 80px; flex: none;
-               -webkit-app-region: no-drag; cursor: pointer; }
-  #capy { width: 100px; height: 80px; image-rendering: pixelated;
-          transition: transform 0.15s; transform-origin: bottom center; }
-  #capy.hop { transform: translateY(-6px); }
-  #zzz { position: absolute; top: 0; right: 0; color: #9aa0a6;
-         font-size: 11px; opacity: 0; pointer-events: none; }
-  #capy-wrap.sleeping #zzz { animation: zzz 2.2s ease infinite; }
-  @keyframes zzz { 0% { opacity: 0; transform: translate(0,4px);} 30%{opacity:1;} 100% { opacity: 0; transform: translate(8px,-10px);} }
+  #bar .title { color: #e2c9a2; font-size: 12px; font-weight: 700; letter-spacing: 2px; }
+  #bar .hint  { color: #8b8f94; font-size: 10px; }
   /* 输入区 */
   #inputrow {
     display: flex; align-items: center; gap: 10px;
-    margin: 2px 16px 10px;
+    margin: 12px 14px 8px;
     padding: 10px 14px;
-    background: rgba(255, 255, 255, 0.07);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.4);
+    border: 2px solid #8a6844;
   }
-  #inputrow:focus-within { border-color: rgba(176, 137, 104, 0.75); }
-  #dot { width: 8px; height: 8px; border-radius: 50%;
-         background: #c9a87b; flex: none; cursor: pointer; }
-  #dot.busy { background: #f59e42; animation: pulse 0.9s infinite; }
-  @keyframes pulse { 50% { opacity: 0.35; transform: scale(0.75); } }
+  #inputrow:focus-within { border-color: #e2c9a2; }
+  #dot { width: 10px; height: 10px; background: #c9a87b;
+         flex: none; cursor: pointer; }
+  #dot.busy { background: #f59e42; animation: blink-dot 0.8s steps(2) infinite; }
+  @keyframes blink-dot { 50% { opacity: 0.2; } }
   #q {
     flex: 1; background: transparent; border: none; outline: none;
-    color: #e8eaed; font-size: 15px; caret-color: #c9a87b;
+    color: #e8eaed; font-size: 15px; caret-color: #e2c9a2;
   }
   #q::placeholder { color: #6e7175; }
   /* 思考中指示器 */
   #thinking {
     display: none; align-items: center; gap: 8px;
-    margin: 0 16px 6px; color: #c9a87b; font-size: 12px;
+    margin: 0 14px 6px; color: #e2c9a2; font-size: 12px;
   }
-  .tdots { display: inline-flex; gap: 5px; }
+  .tdots { display: inline-flex; gap: 4px; }
   .tdots span {
-    width: 7px; height: 7px; border-radius: 50%; background: #c9a87b;
-    animation: tbounce 1.2s infinite;
+    width: 8px; height: 8px; background: #c9a87b;
+    animation: tstep 1s steps(1) infinite;
   }
-  .tdots span:nth-child(2) { animation-delay: 0.18s; }
-  .tdots span:nth-child(3) { animation-delay: 0.36s; }
-  @keyframes tbounce {
-    0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
-    30%           { opacity: 1;    transform: translateY(-4px); }
-  }
+  .tdots span:nth-child(2) { animation-delay: 0.25s; }
+  .tdots span:nth-child(3) { animation-delay: 0.5s; }
+  @keyframes tstep { 0%,100% { opacity: 0.2; } 50% { opacity: 1; } }
   /* 回答区 */
   #a {
-    flex: 1; margin: 0 16px 12px; padding: 4px 2px;
+    flex: 1; margin: 0 14px 12px; padding: 6px;
     overflow-y: auto;
-    color: #eceff1; font-size: 13.5px; line-height: 1.65;
+    color: #eceff1; font-size: 13.5px; line-height: 1.7;
     white-space: pre-wrap; word-break: break-word;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
   }
   #a .dim { color: #8b8f94; }
   #a b { color: #fff; }
-  #a code { color: #e6c79c; background: rgba(255,255,255,0.08); padding: 0 4px; border-radius: 4px; }
-  #a::-webkit-scrollbar { width: 6px; }
-  #a::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+  #a code { color: #e6c79c; background: rgba(255,255,255,0.08); padding: 0 4px; }
+  #a::-webkit-scrollbar { width: 8px; }
+  #a::-webkit-scrollbar-thumb { background: #8a6844; }
+  #a::-webkit-scrollbar-track { background: rgba(0,0,0,0.3); }
   @media (prefers-reduced-motion: reduce) {
-    .tdots span, #dot.busy, #zzz { animation: none; }
+    .tdots span, #dot.busy { animation: none; }
   }
 </style>
 </head>
 <body>
-<div id="panel">
-  <div id="bar">
-    <div class="brand">
+<div id="frame">
+  <div id="panel">
+    <div id="bar">
       <span class="title">CAPYBARA BUDDY</span>
       <span class="hint">Esc 关闭 · 点外部隐藏 · Enter 提问</span>
     </div>
-    <div id="capy-wrap" title="点我一下">
-      <canvas id="capy" width="20" height="16"></canvas>
-      <div id="zzz">z Z z</div>
+    <div id="inputrow">
+      <span id="dot" title=""></span>
+      <input id="q" placeholder="问点什么，回车发送…" spellcheck="false">
     </div>
+    <div id="thinking">
+      <span class="tdots"><span></span><span></span><span></span></span>
+      <span>思考中…（点黄方块可中止）</span>
     </div>
-  <div id="inputrow">
-    <span id="dot" title=""></span>
-    <input id="q" placeholder="问点什么，回车发送…" spellcheck="false">
+    <div id="a"><span class="dim">回答会显示在这里，每次提问覆盖上一条。</span></div>
   </div>
-  <div id="thinking">
-    <span class="tdots"><span></span><span></span><span></span></span>
-    <span>思考中…（点黄点可中止）</span>
-  </div>
-  <div id="a"><span class="dim">回答会显示在这里，每次提问覆盖上一条。</span></div>
 </div>
 <script>
   const q = document.getElementById('q');
@@ -122,167 +109,6 @@
   function showThinking() { thinking.style.display = 'flex'; dot.classList.add('busy'); }
   function hideThinking() { thinking.style.display = 'none'; dot.classList.remove('busy'); }
 
-const FRAMES = {
-  idle1: [
-    "....................",
-    "..............gg....",
-    ".............cccc...",
-    ".............cccc...",
-    "....dd...dd.........",
-    "...dood..dood.......",
-    "..dooooooooood......",
-    ".doooeooooooeood....",
-    ".dooooooooooooood...",
-    ".dllllllllllllllld..",
-    "dllllllllllllllllld.",
-    "dlddllllllllllllllld",
-    "dllllllllllllllllod.",
-    ".dooooooooooooood...",
-    "...dood.....dood....",
-    "...dddd.....dddd...."
-  ],
-  idle2: [
-    "....................",
-    ".............gg.....",
-    "............cccc....",
-    "............cccc....",
-    "....dd...dd.........",
-    "...dood..dood.......",
-    "..dooooooooood......",
-    ".doooeooooooeood....",
-    ".dooooooooooooood...",
-    ".dllllllllllllllld..",
-    "dllllllllllllllllld.",
-    "dlddllllllllllllllld",
-    "dllllllllllllllllod.",
-    ".dooooooooooooood...",
-    "...dood.....dood....",
-    "...dddd.....dddd...."
-  ],
-  blink: [
-    "....................",
-    "..............gg....",
-    ".............cccc...",
-    ".............cccc...",
-    "....dd...dd.........",
-    "...dood..dood.......",
-    "..dooooooooood......",
-    ".dooooooooooooood...",
-    ".dllllllllllllllld..",
-    "dllllllllllllllllld.",
-    "dlddllllllllllllllld",
-    "dllllllllllllllllod.",
-    ".dooooooooooooood...",
-    "...dood.....dood....",
-    "...dddd.....dddd....",
-    "...................."
-  ],
-  hop: [
-    "..............gg....",
-    ".............cccc...",
-    ".............cccc...",
-    "....dd...dd.........",
-    "...dood..dood.......",
-    "..dooooooooood......",
-    ".doooeooooooeood....",
-    ".dllllllllllllllld..",
-    "dllllllllllllllllld.",
-    "dlddllllllllllllllld",
-    "dllllllllllllllllod.",
-    ".dooooooooooooood...",
-    "...dood.....dood....",
-    "...dddd.....dddd....",
-    "....................",
-    "...................."
-  ],
-};
-
-
-
-  const PAL = { o:'#b08968', d:'#5c4030', l:'#d4b48c', e:'#221a12', c:'#f59e42', g:'#7fb069' };
-  const capy = document.getElementById('capy');
-  const capyWrap = document.getElementById('capy-wrap');
-  const ctx = capy.getContext('2d');
-
-  // 眼睛像素坐标（从 idle1 提取）
-  const EYE_PIXELS = [];
-  FRAMES.idle1.forEach((row, y) => [...row].forEach((ch, x) => { if (ch === 'e') EYE_PIXELS.push([x, y]); }));
-
-  function draw(frame, pupilOff, drawPupils) {
-    ctx.clearRect(0, 0, 20, 16);
-    for (let y = 0; y < frame.length; y++) {
-      for (let x = 0; x < 20; x++) {
-        const ch = frame[y][x];
-        if (ch === '.') continue;
-        ctx.fillStyle = PAL[ch === 'e' ? 'o' : ch];   // 眼睛位置先画身体色
-        ctx.fillRect(x, y, 1, 1);
-      }
-    }
-    if (drawPupils) {
-      ctx.fillStyle = PAL.e;
-      for (const [x, y] of EYE_PIXELS) ctx.fillRect(x + pupilOff.x, y + pupilOff.y, 1, 1);
-    }
-  }
-
-  // 眼睛跟随（全局鼠标，主进程 120ms 推送）
-  const eyeTarget = { x: 0, y: 0 }, eyeCur = { x: 0, y: 0 };
-  window.buddy.onCursor(({ mx, my, wx, wy }) => {
-    const cx = wx + 640 - 50, cy = wy + 40;
-    const dx = mx - cx, dy = my - cy;
-    const dist = Math.hypot(dx, dy) || 1;
-    const k = Math.min(1, dist / 260);
-    eyeTarget.x = Math.round((dx / dist) * k);   // 像素风：偏移只有 -1/0/1
-    eyeTarget.y = Math.round((dy / dist) * k);
-  });
-
-  // 帧状态机
-  let cur = 'idle1', pupilOff = { x: 0, y: 0 };
-  let tick = 0;
-  setInterval(() => {
-    tick++;
-    if (cur === 'idle1' || cur === 'idle2') {
-      cur = (tick % 8 === 0) ? 'idle2' : 'idle1';   // 偶尔晃一下橘子
-      draw(FRAMES[cur], eyeCur, cur !== 'blink');
-    }
-  }, 180);
-
-  // 随机动作
-  const ACTIONS = ['blink', 'hop', 'blink', 'sleep', 'hop'];
-  const DUR = { blink: 500, hop: 650, sleep: 2200 };
-  function playAction(act) {
-    if (act === 'blink') { draw(FRAMES.blink, { x: 0, y: 0 }, false); }
-    else if (act === 'hop') {
-      capy.classList.add('hop'); draw(FRAMES.hop, pupilOff, true);
-      setTimeout(() => { capy.classList.remove('hop'); draw(FRAMES[cur], pupilOff, true); }, 320);
-    }
-    else if (act === 'sleep') { draw(FRAMES.blink, { x: 0, y: 0 }, false); capyWrap.classList.add('sleeping'); }
-    setTimeout(() => {
-      capy.classList.remove('hop'); capyWrap.classList.remove('sleeping');
-      draw(FRAMES[cur], pupilOff, true);
-    }, DUR[act]);
-  }
-  function scheduleAction() {
-    setTimeout(() => {
-      if (!['blink','hop','sleep'].includes(cur)) playAction(ACTIONS[Math.floor(Math.random() * ACTIONS.length)]);
-      scheduleAction();
-    }, 2200 + Math.random() * 3000);
-  }
-  scheduleAction();
-
-  // 眼睛跟随渲染循环（lerp 平滑 + 常态重绘）
-  (function eyeLoop() {
-    eyeCur.x += (eyeTarget.x - eyeCur.x) * 0.2;
-    eyeCur.y += (eyeTarget.y - eyeCur.y) * 0.2;
-    const sx = Math.round(eyeCur.x), sy = Math.round(eyeCur.y);
-    if (sx !== pupilOff.x || sy !== pupilOff.y) {
-      pupilOff = { x: sx, y: sy };
-      if (cur === 'idle1' || cur === 'idle2') draw(FRAMES[cur], pupilOff, true);
-    }
-    requestAnimationFrame(eyeLoop);
-  })();
-
-  capyWrap.addEventListener('click', () => playAction('hop'));
-  /* ---------- 问答 ---------- */
   async function submit() {
     const text = q.value.trim();
     if (!text) return;

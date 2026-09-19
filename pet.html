@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: transparent; overflow: hidden; width: 100%; height: 100%;
+               font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+               user-select: none; cursor: pointer; }
+  img { position: absolute; inset: 0; width: 100%; height: 100%;
+        image-rendering: pixelated; display: none; pointer-events: none; }
+  img.on { display: block; }
+</style>
+</head>
+<body>
+  <img src="ui/frames/frame_01_idle_front.png" data-frame="front" class="on">
+  <img src="ui/frames/frame_02_look_left.png"  data-frame="left">
+  <img src="ui/frames/frame_03_look_right.png" data-frame="right">
+  <img src="ui/frames/frame_04_look_up.png"    data-frame="up">
+  <img src="ui/frames/frame_05_walking.png"    data-frame="walking">
+  <img src="ui/frames/frame_06_sleeping.png"   data-frame="sleeping">
+<script>
+  const imgs = {};
+  document.querySelectorAll('img').forEach(i => imgs[i.dataset.frame] = i);
+
+  /* 帧状态：mode = idle | walking | sleeping；look 仅 idle 时生效 */
+  let mode = 'idle';
+  let look = 'front';
+  function frameName() {
+    if (mode === 'sleeping') return 'sleeping';
+    if (mode === 'walking')  return 'walking';
+    return (look === 'front' || look === 'up') ? 'front' : look;
+  }
+  function render() {
+    const name = frameName();
+    for (const k in imgs) imgs[k].classList.toggle('on', k === name);
+  }
+
+  /* 鼠标朝向（主进程 120ms 推送全局光标 + 宠物窗口位置） */
+  window.buddy.onCursor(({ mx, my, px, py }) => {
+    if (mode !== 'idle') return;
+    const cx = px + 55, cy = py + 55;          // 宠物中心
+    const dx = mx - cx, dy = my - cy;
+    let want = 'front';
+    if (dx < -55) want = 'left';
+    else if (dx > 55) want = 'right';
+    else if (dy < -75) want = 'up';
+    if (want !== look) {                        // 换方向帧
+      look = want;
+      render();
+    }
+  });
+
+  /* 随机行为：踱步 / 打盹 / 抬头看橘子 */
+  function behavior() {
+    setTimeout(() => {
+      const pool = ['walking', 'sleeping', 'sleeping', 'up', 'walking'];
+      const act = pool[Math.floor(Math.random() * pool.length)];
+      if (act === 'walking') { mode = 'walking'; render(); setTimeout(end, 3000); }
+      else if (act === 'sleeping') { mode = 'sleeping'; render(); setTimeout(end, 6000); }
+      else { mode = 'idle'; look = 'up'; render(); setTimeout(end, 2500); }
+      function end() { mode = 'idle'; look = 'front'; render(); behavior(); }
+    }, 5000 + Math.random() * 9000);
+  }
+  behavior();
+
+  /* 拖动 vs 点击：按下后移动超过 5px 算拖动，否则算点击打开问答 */
+  let down = null, dragging = false;
+  document.addEventListener('mousedown', (e) => {
+    down = { x: e.clientX, y: e.clientY };
+    dragging = false;
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!down) return;
+    const dx = e.clientX - down.x, dy = e.clientY - down.y;
+    if (dragging || Math.hypot(dx, dy) > 5) {
+      dragging = true;
+      window.buddy.petDragBy(e.movementX, e.movementY);
+    }
+  });
+  document.addEventListener('mouseup', () => {
+    if (down && !dragging) window.buddy.petClick();
+    down = null;
+    dragging = false;
+  });
+
+  render();
+</script>
+</body>
+</html>

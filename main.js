@@ -1,10 +1,10 @@
 /**
- * Gemini Buddy v0.3 — 跨平台（macOS/Windows）快捷键呼出的 Gemini 快速问答浮窗
+ * Capybara Buddy v1.1 — 桌面常驻像素卡皮巴拉 + 快捷键问答
  *
- * - Option+G (mac) / Alt+G (Win) 呼出/隐藏，Electron 系统级快捷键，无需辅助功能授权
- * - 透明无边框对话框，打字提问，agy（Antigravity CLI）流式回答，每次覆盖上一条
- * - 失焦自动隐藏；回答生成中不隐藏，答完停 4 秒让用户看到
- * - 后端: agy -p "问题"，复用 Google 账号登录态，免 API key
+ * - 桌面常驻卡皮巴拉（不占焦点、置顶、可拖动），点击它弹出问答窗
+ * - Option+G (mac) / Alt+G (Win) 同样呼出/隐藏问答窗
+ * - 卡皮巴拉朝向跟随鼠标（左看/右看/抬头看橘子/呆立），随机踱步、打盹
+ * - 后端自动选择：pollinations（零 key 免费网关，快）/ agy（GB_BACKEND=agy，需登录）
  */
 const { app, BrowserWindow, globalShortcut, ipcMain, screen, Notification } = require('electron');
 const { spawn, execSync } = require('child_process');
@@ -14,13 +14,15 @@ const os = require('os');
 
 const isMac = process.platform === 'darwin';
 const HOTKEY = isMac ? 'Option+G' : 'Alt+G';
-const WIN_W = 640;
-const WIN_H = 400;
+const CHAT_W = 640;
+const CHAT_H = 400;
+const PET_SIZE = 110;
 const ANSWER_TIMEOUT_MS = 180000;
-// agy 思考档位：low 最快（可选 gemini-3.8-flash-low/medium/high，置空则用 agy 默认）
+// agy 思考档位：low 最快；置空则用 agy 默认
 const AGY_MODEL = process.env.GB_AGY_MODEL || 'gemini-3.8-flash-low';
 
-let win = null;
+let chatWin = null;    // 问答浮窗
+let petWin = null;     // 桌面宠物（常驻）
 let busy = false;
 let childProc = null;
 
@@ -32,19 +34,18 @@ if (process.env.GB_PROXY) {
 if (!app.requestSingleInstanceLock()) app.quit();
 
 // ---------- 后端选择 ----------
-// 默认 pollinations（零注册零 key，1~2 秒出答案）；要质量用 GB_BACKEND=agy（需登录，9~11 秒）
-// GB_BACKEND=agy|pollinations 可强制指定
+// 默认 pollinations（零注册零 key，1~2 秒）；GB_BACKEND=agy 用 Antigravity CLI（质量更好）
 const BACKEND = process.env.GB_BACKEND || 'pollinations';
 
 // ---------- pollinations：免费无 key，GET 即返回文本 ----------
 async function runPollinations(question) {
   busy = true;
-  const send = (t) => { if (win && !win.isDestroyed()) win.webContents.send('answer-chunk', t); };
+  const send = (t) => { if (chatWin && !chatWin.isDestroyed()) chatWin.webContents.send('answer-chunk', t); };
   const done = () => {
     busy = false;
-    if (win && !win.isDestroyed()) win.webContents.send('answer-done');
+    if (chatWin && !chatWin.isDestroyed()) chatWin.webContents.send('answer-done');
     setTimeout(() => {
-      if (win && win.isVisible() && !win.isFocused()) win.hide();
+      if (chatWin && chatWin.isVisible() && !chatWin.isFocused()) chatWin.hide();
     }, 4000);
   };
   try {
@@ -52,7 +53,6 @@ async function runPollinations(question) {
     const resp = await fetch(url, { signal: AbortSignal.timeout(60000) });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const text = (await resp.text()).trim();
-    console.log(`[gemini-buddy][pollinations] 返回长度=${text.length}, 发送 chunk`);
     send(text || '[空回答]');
   } catch (e) {
     send(`[出错] ${e.message}（后端: pollinations）\n`);
@@ -79,79 +79,17 @@ function findAgy() {
   return null;
 }
 
-// ---------- 窗口 ----------
-function createWindow() {
-  win = new BrowserWindow({
-    width: WIN_W,
-    height: WIN_H,
-    show: false,
-    frame: false,
-    transparent: true,
-    hasShadow: false,
-    fullscreenable: false,
-    resizable: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
-  if (isMac) {
-    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-    app.dock.hide();
-  }
-  win.loadFile(path.join(__dirname, 'ui', 'index.html'));
-
-  // 失焦自动隐藏（回答生成中除外）
-  win.on('blur', () => {
-    if (!busy && win.isVisible()) win.hide();
-  });
-  win.on('closed', () => { win = null; });
-
-  // 卡皮巴拉眼睛跟随：推送全局鼠标 + 窗口位置
-  setInterval(() => {
-    if (win && !win.isDestroyed() && win.isVisible()) {
-      const p = screen.getCursorScreenPoint();
-      const [wx, wy] = win.getPosition();
-      win.webContents.send('cursor', { mx: p.x, my: p.y, wx, wy });
-    }
-  }, 120);
-}
-
-function positionAtCursor() {
-  const disp = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-  const wa = disp.workArea;
-  win.setPosition(
-    wa.x + Math.round((wa.width - WIN_W) / 2),
-    wa.y + Math.round(wa.height * 0.14)
-  );
-}
-
-function toggle() {
-  if (!win) createWindow();
-  if (win.isVisible()) {
-    win.hide();
-    return;
-  }
-  positionAtCursor();
-  win.show();
-  win.focus();
-  win.webContents.send('focus-input');
-}
-
 // ---------- agy 调用（流式） ----------
 function runAgy(question) {
   const AGY = findAgy();
   busy = true;
-  const send = (channel, text) => {
-    if (win && !win.isDestroyed()) win.webContents.send(channel, text);
+  const send = (t) => {
+    if (chatWin && !chatWin.isDestroyed()) chatWin.webContents.send('answer-chunk', t);
   };
 
   if (!AGY) {
     busy = false;
-    send('answer-chunk', '[未找到 agy 命令] 请先安装 Antigravity CLI 并登录（见 README）\n');
+    send('[未找到 agy 命令] 请先安装 Antigravity CLI 并登录（见 README）\n');
     send('answer-done');
     return;
   }
@@ -165,24 +103,105 @@ function runAgy(question) {
   childProc.stdout.setEncoding('utf8');
   childProc.stdout.on('data', (d) => {
     out += d;
-    send('answer-chunk', d);
+    send(d);
   });
   childProc.stderr.on('data', (d) => {
-    if (!out.trim()) send('answer-chunk', d.toString());
+    if (!out.trim()) send(d.toString());
   });
-  childProc.on('error', (e) => send('answer-chunk', `\n[调用失败] ${e.message}\n`));
+  childProc.on('error', (e) => send(`\n[调用失败] ${e.message}\n`));
   childProc.on('close', (code) => {
     busy = false;
     childProc = null;
     if (code !== 0 && !out.trim()) {
-      send('answer-chunk', `\n[出错] agy 退出码 ${code}，可运行 "agy" 检查登录状态\n`);
+      send(`\n[出错] agy 退出码 ${code}，可运行 "agy" 检查登录状态\n`);
     }
     send('answer-done');
     // 答完时用户已切走：停留几秒后自动隐藏
     setTimeout(() => {
-      if (win && win.isVisible() && !win.isFocused()) win.hide();
+      if (chatWin && chatWin.isVisible() && !chatWin.isFocused()) chatWin.hide();
     }, 4000);
   });
+}
+
+// ---------- 问答浮窗 ----------
+function createChatWindow() {
+  chatWin = new BrowserWindow({
+    width: CHAT_W,
+    height: CHAT_H,
+    show: false,
+    frame: false,
+    transparent: true,
+    hasShadow: false,
+    fullscreenable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  if (isMac) chatWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  chatWin.loadFile(path.join(__dirname, 'ui', 'index.html'));
+
+  // 失焦自动隐藏（回答生成中除外）
+  chatWin.on('blur', () => {
+    if (!busy && chatWin.isVisible()) chatWin.hide();
+  });
+  chatWin.on('closed', () => { chatWin = null; });
+}
+
+// 呼出：问答窗贴着宠物弹出
+function toggleChat() {
+  if (!chatWin) createChatWindow();
+  if (chatWin.isVisible()) {
+    chatWin.hide();
+    return;
+  }
+  let px = 100, py = 100;
+  if (petWin) [px, py] = petWin.getPosition();
+  const disp = screen.getDisplayNearestPoint({ x: px, y: py });
+  const wa = disp.workArea;
+  let x = px - CHAT_W - 6;                 // 默认宠物左侧
+  if (x < wa.x + 4) x = px + PET_SIZE + 6; // 左边放不下放右侧
+  const y = Math.max(wa.y + 4, py - 60);
+  chatWin.setPosition(x, y);
+  chatWin.show();
+  chatWin.focus();
+  chatWin.webContents.send('focus-input');
+}
+
+// ---------- 桌面宠物（常驻，不抢焦点） ----------
+function createPetWindow() {
+  petWin = new BrowserWindow({
+    width: PET_SIZE,
+    height: PET_SIZE,
+    show: false,
+    frame: false,
+    transparent: true,
+    hasShadow: false,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    focusable: false,            // 点击不抢当前应用焦点
+    alwaysOnTop: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  petWin.setAlwaysOnTop(true, 'floating');
+  if (isMac) petWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  petWin.loadFile(path.join(__dirname, 'pet.html'));
+
+  // 初始位置：主屏右上角
+  const wa = screen.getPrimaryDisplay().workArea;
+  petWin.setPosition(wa.x + wa.width - 130, wa.y + 70);
+  petWin.showInactive();         // 显示但不夺焦点
+  petWin.on('closed', () => { petWin = null; });
 }
 
 // ---------- IPC ----------
@@ -193,51 +212,66 @@ ipcMain.handle('ask', (_e, q) => {
   else runAgy(question);
   return { ok: true };
 });
-ipcMain.on('hide', () => { if (win) win.hide(); });
+ipcMain.on('hide', () => { if (chatWin) chatWin.hide(); });
 ipcMain.handle('stop', () => {
   if (childProc) childProc.kill();
 });
+ipcMain.on('pet-drag', (_e, dx, dy) => {
+  if (!petWin) return;
+  const [x, y] = petWin.getPosition();
+  petWin.setPosition(x + Math.round(dx), y + Math.round(dy));
+});
+ipcMain.on('pet-click', () => toggleChat());
 
 // ---------- 生命周期 ----------
 app.whenReady().then(() => {
-  createWindow(); // 预加载，呼出即达
+  if (isMac) app.dock.hide();
+
+  createPetWindow();   // 常驻宠物
+  createChatWindow();  // 预加载问答窗，呼出即达
   console.log(`[gemini-buddy] 后端: ${BACKEND}` + (BACKEND === 'agy' ? ` (${findAgy() || '未找到!'})` : ' (免费网关，约1~2秒)'));
 
-  const ok = globalShortcut.register(HOTKEY, toggle);
+  const ok = globalShortcut.register(HOTKEY, toggleChat);
   if (!ok) {
     new Notification({
-      title: 'Gemini Buddy',
+      title: 'Capybara Buddy',
       body: `快捷键 ${HOTKEY} 注册失败，可能被占用，请改 main.js 里的 HOTKEY`,
     }).show();
   }
 
-  // 自动化测试：GB_TEST_ASK="问题" 启动，自动呼出、提问、打印回答后退出
-  // （与 GB_DEBUG_SHOT 互斥：截图模式自带提问逻辑）
+  // 鼠标推送：宠物朝向跟随（120ms）
+  setInterval(() => {
+    const p = screen.getCursorScreenPoint();
+    if (petWin && !petWin.isDestroyed()) {
+      const [px, py] = petWin.getPosition();
+      petWin.webContents.send('cursor', { mx: p.x, my: p.y, px, py });
+    }
+  }, 120);
+
+  // 自动化测试：GB_TEST_ASK="问题"（GB_TEST_ASK2 第二问验证覆盖）
   if (process.env.GB_TEST_ASK !== undefined && !process.env.GB_DEBUG_SHOT) {
-    const q = process.env.GB_TEST_ASK || '1+1等于几？一句话回答';
+    const q = process.env.GB_TEST_ASK;
     setTimeout(async () => {
-      toggle();
+      toggleChat();
       await new Promise((r) => setTimeout(r, 800));
-      await win.webContents.executeJavaScript(
+      await chatWin.webContents.executeJavaScript(
         `document.getElementById('q').value = ${JSON.stringify(q)}; submit(); true;`
       );
-      // 若 GB_TEST_ASK2 存在：第一答完成后再问第二个问题，验证覆盖
       const q2 = process.env.GB_TEST_ASK2;
       await new Promise((r) => setTimeout(r, 500));
       if (q2) {
         for (let i = 0; i < 60; i++) {
-          const d = await win.webContents.executeJavaScript('window.__test.done');
+          const d = await chatWin.webContents.executeJavaScript('window.__test.done');
           if (d) break;
           await new Promise((r) => setTimeout(r, 1000));
         }
-        await win.webContents.executeJavaScript(
+        await chatWin.webContents.executeJavaScript(
           `document.getElementById('q').value = ${JSON.stringify(q2)}; submit(); true;`
         );
       }
-      // 轮询直到回答完成
       for (let i = 0; i < 120; i++) {
         await new Promise((r) => setTimeout(r, 1000));
-        const done = await win.webContents.executeJavaScript(
+        const done = await chatWin.webContents.executeJavaScript(
           `window.__test.done && document.getElementById('a').innerText`
         );
         if (done) {
@@ -249,26 +283,18 @@ app.whenReady().then(() => {
     }, 2500);
   }
 
-  // 调试截图：GB_DEBUG_SHOT=<png路径>（可选配 GB_TEST_ASK 先提交一个问题，抓思考动画）
+  // 调试截图：GB_DEBUG_SHOT=<png路径>（GB_TEST_ASK 可选配：先提交一个问题）
   if (process.env.GB_DEBUG_SHOT) {
     setTimeout(async () => {
-      toggle();
+      toggleChat();
       await new Promise((r) => setTimeout(r, 2000));
       if (process.env.GB_TEST_ASK !== undefined) {
-        await win.webContents.executeJavaScript(
+        await chatWin.webContents.executeJavaScript(
           `document.getElementById('q').value = ${JSON.stringify(process.env.GB_TEST_ASK)}; submit(); true;`
         );
         await new Promise((r) => setTimeout(r, 900));
       }
-      const layout = await win.webContents.executeJavaScript(`(() => {
-        const r = (s) => { const b = document.querySelector(s)?.getBoundingClientRect(); return b ? [b.x,b.y,b.width,b.height].map(Math.round) : null; };
-        const p = document.getElementById('panel');
-        const cs = getComputedStyle(p);
-        const bs = getComputedStyle(document.getElementById('bar'));
-        return JSON.stringify({ panelRect: r('#panel'), panelDisplay: cs.display, panelDir: cs.flexDirection, panelH: cs.height, bodyH: document.body.getBoundingClientRect().height, barMarginTop: bs.marginTop, barPos: bs.position, kids: [...p.children].map(c => c.id + ':' + getComputedStyle(c).display + ':' + Math.round(c.getBoundingClientRect().y)) });
-      })()`);
-      console.log('[gemini-buddy] 布局:', layout);
-      const img = await win.webContents.capturePage();
+      const img = await chatWin.webContents.capturePage();
       fs.writeFileSync(process.env.GB_DEBUG_SHOT, img.toPNG());
       console.log('截图已保存:', process.env.GB_DEBUG_SHOT);
       app.quit();
@@ -276,6 +302,6 @@ app.whenReady().then(() => {
   }
 });
 
-app.on('second-instance', () => toggle());
+app.on('second-instance', () => toggleChat());
 app.on('will-quit', () => globalShortcut.unregisterAll());
 app.on('window-all-closed', () => {}); // 常驻后台
