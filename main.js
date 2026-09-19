@@ -234,10 +234,11 @@ let petDrag = null;   // {sx, sy, x, y}
 ipcMain.on('pet-drag-start', (_e, sx, sy) => {
   if (!petWin) return;
   const [x, y] = petWin.getPosition();
-  petDrag = { sx, sy, x, y, last: null };
+  petDrag = { sx, sy, x, y, lastMove: Date.now() };
 });
 ipcMain.on('pet-drag-move', (_e, sx, sy) => {
   if (!petDrag || !petWin) return;
+  petDrag.lastMove = Date.now();
   // 限制在工作区内（留 6px 边距）：防止拖进台前调度区域导致闪烁、
   // 也避免宠物被拖到半截出屏找不回来
   const disp = screen.getDisplayNearestPoint({ x: sx, y: sy });
@@ -280,12 +281,20 @@ app.whenReady().then(() => {
       }
     }, 2000);
   }
-  // 鼠标推送：宠物朝向跟随（120ms）
+  // 鼠标推送：宠物朝向跟随（120ms）+ 拖动泄漏兜底
   setInterval(() => {
     const p = screen.getCursorScreenPoint();
     if (petWin && !petWin.isDestroyed()) {
       const [px, py] = petWin.getPosition();
       petWin.webContents.send('cursor', { mx: p.x, my: p.y, px, py });
+      // 兜底：拖动 IPC 停滞 0.9s 且光标在窗口外（外扩 50px）→ mouseup 丢失，强制结束拖动
+      if (petDrag && Date.now() - petDrag.lastMove > 900) {
+        const outside = p.x < px - 50 || p.x > px + 160 || p.y < py - 50 || p.y > py + 160;
+        if (outside) {
+          petDrag = null;
+          petWin.webContents.send('pet-event', 'drag-lost');
+        }
+      }
     }
   }, 120);
 

@@ -163,6 +163,7 @@ setInterval(() => {
 /* ---------- 事件：答完欢呼 / 打开问答送爱心 ---------- */
 window.buddy.onPetEvent((e) => {
   const now = Date.now();
+  if (e === 'drag-lost') { endDrag(); return; }   // 主进程兜底：mouseup 丢失强制恢复
   if (now < eventHoldUntil) return;
   if (e === 'cheer') {
     mode = 'cheering';
@@ -186,7 +187,7 @@ document.addEventListener('mousedown', (e) => {
   try { document.body.setPointerCapture(e.pointerId); } catch (_) {}
 });
 function endDrag() {
-  if (dragging) { mode = 'idle'; look = 'front'; }
+  mode = 'idle'; look = 'front';
   window.buddy.petDragEnd();
   down = null;
   dragging = false;
