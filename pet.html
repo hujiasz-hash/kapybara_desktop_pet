@@ -183,22 +183,31 @@ document.addEventListener('mousedown', (e) => {
   dragging = false;
   lastActivity = Date.now();
   window.buddy.petDragStart(e.screenX, e.screenY);
+  try { document.body.setPointerCapture(e.pointerId); } catch (_) {}
 });
+function endDrag() {
+  if (dragging) { mode = 'idle'; look = 'front'; }
+  window.buddy.petDragEnd();
+  down = null;
+  dragging = false;
+  render();
+}
 document.addEventListener('mousemove', (e) => {
   lastActivity = Date.now();
   if (!down) return;
+  // 兜底：鼠标已在窗口外松开、mouseup 丢失（buttons=0 = 无任何按键）
+  if (e.buttons === 0) { endDrag(); return; }
   const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
   if (dragging || moved > 5) {
     if (!dragging) { dragging = true; mode = 'dragged'; render(); }
     window.buddy.petDragMove(e.screenX, e.screenY);
   }
 });
-document.addEventListener('mouseup', () => {
-  if (down && !dragging) window.buddy.petClick();
-  if (dragging) { mode = 'idle'; look = 'front'; render(); }
-  window.buddy.petDragEnd();
-  down = null;
-  dragging = false;
+document.addEventListener('mouseup', (e) => {
+  try { document.body.releasePointerCapture(e.pointerId); } catch (_) {}
+  const wasClick = down && !dragging;
+  endDrag();
+  if (wasClick) window.buddy.petClick();
 });
 
 window.__petState = () => JSON.stringify({
