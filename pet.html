@@ -121,16 +121,22 @@ const IDLE_BEHAVIORS = [
   ['hot_spring',      6000, 0.5, null],            // 彩蛋级
 ];
 const CHAIN_DUR = { typing_laptop: 4500 };
-function weightedPick() {
-  const total = IDLE_BEHAVIORS.reduce((s, b) => s + b[2], 0);
+function weightedPick(pool) {
+  const p = pool || IDLE_BEHAVIORS;
+  const total = p.reduce((s, b) => s + b[2], 0);
   let r = Math.random() * total;
-  for (const b of IDLE_BEHAVIORS) { if ((r -= b[2]) < 0) return b; }
-  return IDLE_BEHAVIORS[0];
+  for (const b of p) { if ((r -= b[2]) < 0) return b; }
+  return p[0];
 }
+// 右键专用池：行为 + 欢呼 + 捧爱心（这两个原本只有事件动画才能看到）
+const RIGHT_POOL = IDLE_BEHAVIORS.concat([
+  ['cheering', 1500, 2, null],
+  ['offering_heart', 1600, 2, null],
+]);
 
-function playBehavior(preferSwap) {
-  let pick = weightedPick();
-  if (preferSwap && pick[0] === mode) pick = weightedPick();   // 右键时尽量换个动作
+function playBehavior(preferSwap, pool) {
+  let pick = weightedPick(pool);
+  if (preferSwap && pick[0] === mode) pick = weightedPick(pool);   // 右键时尽量换个动作
   const [name, dur, _w, chain] = pick;
   mode = name;
   lastActivity = Date.now();
@@ -193,7 +199,7 @@ window.buddy.onPetEvent((e) => {
 let down = null, dragging = false;
 document.addEventListener('mousedown', (e) => {
   if (e.button === 2) {         // 右键：换个动画（mousedown 入口对轻点/按压都稳定）
-    if (mode !== 'dragged') playBehavior(true);
+    if (mode !== 'dragged') playBehavior(true, RIGHT_POOL);
     return;
   }
   if (e.button !== 0) return;   // 其余只认左键
