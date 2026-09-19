@@ -204,6 +204,20 @@ function createPetWindow() {
   const wa = screen.getPrimaryDisplay().workArea;
   petWin.setPosition(wa.x + wa.width - 130, wa.y + 70);
   console.log(`[gemini-buddy] pet 初始=(${wa.x + wa.width - 130}, ${wa.y + 70}) workArea=${wa.width}x${wa.height}+${wa.x}+${wa.y}`);
+  // 拖动中被系统弹回（台前调度条等）→ 学习真实边界，后续帧 clamp 收紧不再进入
+  petWin.on('move', () => {
+    if (!petDrag || !petDrag.expect || petWin.isDestroyed()) return;
+    const [ax] = petWin.getPosition();
+    const ex = petDrag.expect.x;
+    if (Math.abs(ax - ex) > 3) {
+      // 被系统弹回：真实边界在最后一次稳定位置附近（弹回落点可能飞很远，不可用）
+      if (ex > ax) petLimit = { minX: petLimit ? petLimit.minX : -1e9, maxX: petDrag.stableX };
+      else if (ex < ax) petLimit = { minX: petDrag.stableX, maxX: petLimit ? petLimit.maxX : 1e9 };
+      petDrag.expect = null;
+    } else {
+      petDrag.stableX = ax;   // 记录最后稳定位置
+    }
+  });
   petWin.webContents.on('console-message', (_e, _lvl, msg) => {
     fs.appendFileSync('/tmp/pet-debug.log', `[${_lvl}] ${msg}\n`);
   });
@@ -230,11 +244,13 @@ ipcMain.handle('stop', () => {
   if (childProc) childProc.kill();
 });
 // 拖动：绝对坐标（按下时窗口位置 + 鼠标净位移），边缘 clamp 不会累积漂移
-let petDrag = null;   // {sx, sy, x, y}
+let petDrag = null;   // {sx, sy, x, y, lastMove, expect}
+let petLimit = null;  // {minX, maxX} 系统真实允许边界（拖动中动态学习，台前调度条不反映在 workArea 里）
 ipcMain.on('pet-drag-start', (_e, sx, sy) => {
   if (!petWin) return;
   const [x, y] = petWin.getPosition();
-  petDrag = { sx, sy, x, y, lastMove: Date.now() };
+  petDrag = { sx, sy, x, y, lastMove: Date.now(), expect: null, stableX: x };
+  petLimit = null;   // 每次拖动重新学习（台前调度开/关自适应）
 });
 ipcMain.on('pet-drag-move', (_e, sx, sy) => {
   if (!petDrag || !petWin) return;
@@ -246,9 +262,13 @@ ipcMain.on('pet-drag-move', (_e, sx, sy) => {
   const m = 6;
   let x = Math.round(petDrag.x + sx - petDrag.sx);
   let y = Math.round(petDrag.y + sy - petDrag.sy);
-  x = Math.max(wa.x + m, Math.min(x, wa.x + wa.width - PET_SIZE - m));
+  // 学习到的系统真实边界优先（比 workArea 更紧）
+  const minX = Math.max(wa.x + m, petLimit ? petLimit.minX : -1e9);
+  const maxX = Math.min(wa.x + wa.width - PET_SIZE - m, petLimit ? petLimit.maxX : 1e9);
+  x = Math.max(minX, Math.min(x, maxX));
   y = Math.max(wa.y + m, Math.min(y, wa.y + wa.height - PET_SIZE - m));
   petWin.setPosition(x, y);
+  petDrag.expect = { x, y };
 });
 ipcMain.on('pet-drag-end', () => { petDrag = null; });
 ipcMain.on('pet-click', () => toggleChat());
