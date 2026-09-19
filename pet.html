@@ -63,7 +63,7 @@ const dragged = () => mode === 'dragged';
 const busyNow = () => dragged() || Date.now() < eventHoldUntil;
 
 function frameName() {
-  if (dragged) return 'picked_up';
+  if (mode === 'dragged') return 'picked_up';
   const now = Date.now();
   if (now < eventHoldUntil) return mode;
   if (mode === 'sleeping') return 'sleeping';
