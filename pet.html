@@ -104,13 +104,14 @@ function tickFrame() {
 
 /* ---------- 节奏参数（?fast=1 测试用短阈值） ---------- */
 const FAST = new URLSearchParams(location.search).has('fast');
-const NOD_AFTER   = (FAST ? 3 : 15) * 1000;   // 鼠标静止 15s → 打瞌睡
-const SLEEP_AFTER = (FAST ? 6 : 30) * 1000;   // 静止 30s → 趴下睡死
+// 鼠标静止 15s → 打瞌睡，并且就这么一直打着（用户要求：长时间不用就让它安静打瞌睡，
+// 不再转入"趴下安睡"那个更沉的姿势——那个动作留给 pi 的 session_shutdown 用）
+const NOD_AFTER = (FAST ? 3 : 15) * 1000;
 
 /* ---------- 状态机 ----------
    优先级：拖动 > hook 事件（瞬时反馈 > 工作态）> 睡意 > 自娱随机 > 朝向待机
    mode      : idle | dragged | <动作名>（自娱行为 或 惊醒过渡）
-   drowsy    : null 清醒 | 'nod' 打瞌睡 | 'sleep' 睡死
+   drowsy    : null 清醒 | 'nod' 打瞌睡（一直保持到鼠标动）
    eventMode : hook 事件驱动的动作（pi 侧来事件时设）
    鼠标一动就重新计时，并立刻从睡意里醒过来 */
 let mode = 'idle';
@@ -128,8 +129,7 @@ function frameName() {
   const now = Date.now();
   if (mode === 'dragged') return 'picked_up';                  // 1 被拖动
   if (eventMode && now < eventHoldUntil) return eventMode;     // 2 hook 事件
-  if (drowsy === 'sleep') return 'sleep';                      // 3 睡死
-  if (drowsy === 'nod') return 'nodding';                      // 4 打瞌睡
+  if (drowsy === 'nod') return 'nodding';                      // 3 打瞌睡（保持）
   if (now < behaviorHoldUntil && mode !== 'idle') return mode; // 5 自娱 / 惊醒过渡
   return look;                                                 // 6 朝向待机
 }
@@ -266,11 +266,7 @@ setInterval(() => {
   if (eventMode) return;                               // 事件占着，睡意/自娱都不掺和
 
   const idleMs = now - lastActivity;
-  if (idleMs > SLEEP_AFTER) {                          // 睡死
-    if (drowsy !== 'sleep') { drowsy = 'sleep'; render(); }
-    return;
-  }
-  if (idleMs > NOD_AFTER) {                            // 打瞌睡
+  if (idleMs > NOD_AFTER) {                            // 打瞌睡：一直保持，自娱动作停掉
     if (drowsy !== 'nod') { drowsy = 'nod'; render(); }
     return;
   }
