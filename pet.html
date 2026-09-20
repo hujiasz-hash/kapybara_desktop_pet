@@ -162,9 +162,9 @@ window.buddy.onCursor(({ mx, my, px, py }) => {
   }
   if (mode === 'idle' && !drowsy && !eventMode) {               // 朝向跟随
     let want = 'front';
-    if (dx < -30) want = 'left';          // 方向判定阈值 30px（原先 55/75，比 50px 触发圈还大，
-    else if (dx > 30) want = 'right';     // 导致凑近时只能显示正面，看不到它往哪边看）
-    else if (dy < -30) want = 'up';
+    if (dx < -20) want = 'left';          // 方向判定阈值 20px（原先 55/75，比 50px 触发圈还大，
+    else if (dx > 20) want = 'right';     // 导致凑近时只能显示正面，看不到它往哪边看）
+    else if (dy < -20) want = 'up';
     if (want !== look) { look = want; render(); }
   }
 });
