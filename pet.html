@@ -109,8 +109,8 @@ const FAST = new URLSearchParams(location.search).has('fast');
 const NOD_AFTER   = (FAST ? 3 : 30) * 1000;   // 鼠标静止 30s → 打瞌睡（点头循环，不含"惊醒"帧）
 const SLEEP_AFTER = (FAST ? 6 : 60) * 1000;   // 再不动 30s（共 60s）→ 趴下安睡
 
-// 鼠标进到桌宠周边这个半径内 → 优先看着鼠标，不演自娱（"它在盯着我"的感觉）
-const NEAR_R = 300;
+// 鼠标进到桌宠周边这个半径内（约贴到它跟前）→ 优先看着鼠标，不演自娱
+const NEAR_R = 100;
 
 /* ---------- 状态机 ----------
    优先级：拖动 > hook 事件（瞬时反馈 > 工作态）> 睡意 > 自娱随机 > 朝向待机
