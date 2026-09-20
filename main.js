@@ -319,7 +319,7 @@ const PI_EVENT_ANIM = {
   tool_execution_end:   'inspiration',  // 工具跑完 → 灵光一现（失败则 angry_zen，见下）
   agent_settled:        'cheering',     // 真的干完了 → 欢呼（可打断工作态）
   session_compact:      'spacing_out',  // 压缩上下文 → 灵魂出窍发呆
-  session_shutdown:     'sleep',        // session 关闭 → 趴下睡
+  // session_shutdown 不再触发动画（用户要求：会话关了就别演了，「趴下安睡」用到睡眠待机里）
 };
 
 function onPiEvent(ev) {

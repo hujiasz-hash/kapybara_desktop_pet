@@ -39,7 +39,8 @@ const ANIM = {
   hot_spring:    { seq: [1, 2, 3, 2],   durs: [500, 500, 500, 500] },   // 泡温泉顶毛巾
   walk:          { seq: [1, 2, 3, 2],   durs: [220, 220, 220, 220] },   // 漫步走动巡逻
   run:           { seq: [1, 2, 3],      durs: [140, 140, 140] },        // 贴地快跑冲刺
-  nodding:       { seq: [1, 2, 3],      durs: [800, 1000, 800] },       // 坐立瞌睡惊醒
+  nodding:       { seq: [1, 2, 3],      durs: [800, 1000, 800] },       // 完整版（含"惊醒"帧）→ 只在鼠标动时播
+  nodding_calm:  { seq: [1, 2],         durs: [800, 1000], src: 'nodding' }, // 打瞌睡循环：掐掉第 3 帧（眼睛圆睁+汗）
   sleep:         { seq: [1, 2, 3, 1],   durs: [700, 700, 700, 700] },   // 趴下安睡打盹
   orange_trick:  { seq: [1, 2, 3],      durs: [400, 350, 400] },        // 顶橘颠球绝活
   clover:        { seq: [1, 2, 1, 2, 3], durs: [350, 300, 450, 350, 300] },  // 大嚼三叶草
@@ -51,7 +52,8 @@ const ANIM = {
 };
 const ANIM_SRC = {};   // 动作名 → 帧 URL 数组（按 seq 展开，index 与播放序号对应）
 for (const [name, a] of Object.entries(ANIM)) {
-  ANIM_SRC[name] = a.seq.map((n) => `ui/frames/${name}_${n}.png`);
+  const base = a.src || name;                 // 允许复用别的动作的帧文件（如 nodding_calm 用 nodding 的帧）
+  ANIM_SRC[name] = a.seq.map((n) => `ui/frames/${base}_${n}.png`);
 }
 
 const img = document.createElement('img');
@@ -104,14 +106,17 @@ function tickFrame() {
 
 /* ---------- 节奏参数（?fast=1 测试用短阈值） ---------- */
 const FAST = new URLSearchParams(location.search).has('fast');
-// 鼠标静止 15s → 打瞌睡，并且就这么一直打着（用户要求：长时间不用就让它安静打瞌睡，
-// 不再转入"趴下安睡"那个更沉的姿势——那个动作留给 pi 的 session_shutdown 用）
-const NOD_AFTER = (FAST ? 3 : 15) * 1000;
+const NOD_AFTER   = (FAST ? 3 : 30) * 1000;   // 鼠标静止 30s → 打瞌睡（点头循环，不含"惊醒"帧）
+const SLEEP_AFTER = (FAST ? 6 : 60) * 1000;   // 再不动 30s（共 60s）→ 趴下安睡
+
+// 鼠标进到桌宠周边这个半径内 → 优先看着鼠标，不演自娱（"它在盯着我"的感觉）
+const NEAR_R = 300;
 
 /* ---------- 状态机 ----------
    优先级：拖动 > hook 事件（瞬时反馈 > 工作态）> 睡意 > 自娱随机 > 朝向待机
    mode      : idle | dragged | <动作名>（自娱行为 或 惊醒过渡）
-   drowsy    : null 清醒 | 'nod' 打瞌睡（一直保持到鼠标动）
+   drowsy    : null 清醒 | 'nod' 打瞌睡 | 'sleep' 趴下安睡（都保持到鼠标动）
+   mouseNear : 鼠标是否在桌宠周边 NEAR_R 内（决定朝向优先于自娱）
    eventMode : hook 事件驱动的动作（pi 侧来事件时设）
    鼠标一动就重新计时，并立刻从睡意里醒过来 */
 let mode = 'idle';
@@ -122,6 +127,8 @@ let workFallback = null;            // 工作态兜底：瞬时反馈播完回�
 let behaviorHoldUntil = 0;
 let nextBehaviorAt = Date.now() + 6000 + Math.random() * 4000;
 let lastMouse = { x: -1, y: -1 };
+let mouseNear = false;
+let mouseDist = 9999;
 let lastActivity = Date.now();
 const dragged = () => mode === 'dragged';
 
@@ -129,9 +136,11 @@ function frameName() {
   const now = Date.now();
   if (mode === 'dragged') return 'picked_up';                  // 1 被拖动
   if (eventMode && now < eventHoldUntil) return eventMode;     // 2 hook 事件
-  if (drowsy === 'nod') return 'nodding';                      // 3 打瞌睡（保持）
-  if (now < behaviorHoldUntil && mode !== 'idle') return mode; // 5 自娱 / 惊醒过渡
-  return look;                                                 // 6 朝向待机
+  if (drowsy === 'sleep') return 'sleep';                      // 3 趴下安睡（保持）
+  if (drowsy === 'nod') return 'nodding_calm';                 // 4 打瞌睡：点头循环，不播"惊醒"帧
+  if (mouseNear) return look;                                  // 5 鼠标在附近 → 看着鼠标（优先于自娱）
+  if (now < behaviorHoldUntil && mode !== 'idle') return mode; // 6 自娱 / 惊醒过渡
+  return look;                                                 // 7 朝向待机
 }
 function render() {
   const k = frameName();
@@ -143,13 +152,15 @@ function render() {
 window.buddy.onCursor(({ mx, my, px, py }) => {
   const moved = mx !== lastMouse.x || my !== lastMouse.y;
   lastMouse = { x: mx, y: my };
+  const cx = px + 55, cy = py + 55;                            // 桌宠中心
+  const dx = mx - cx, dy = my - cy;
+  mouseDist = Math.round(Math.hypot(dx, dy));
+  mouseNear = mouseDist <= NEAR_R;                              // 鼠标是否在周边
   if (moved) {
     lastActivity = Date.now();
     if (drowsy) wake();                                        // 鼠标一动就醒
   }
   if (mode === 'idle' && !drowsy && !eventMode) {               // 朝向跟随
-    const cx = px + 55, cy = py + 55;
-    const dx = mx - cx, dy = my - cy;
     let want = 'front';
     if (dx < -55) want = 'left';
     else if (dx > 55) want = 'right';
@@ -161,7 +172,7 @@ window.buddy.onCursor(({ mx, my, px, py }) => {
 /* 醒来：先演一轮"坐立瞌睡惊醒"（末帧就是惊醒），再回到正常 */
 function wake() {
   drowsy = null;
-  mode = 'nodding';
+  mode = 'nodding';        // 完整版：末帧就是"惊醒"（眼睛圆睁+汗），只有鼠标动能把它放出来
   behaviorHoldUntil = Date.now() + 3600;                        // 一轮 nodding（放慢后 800+1000+800 各 ×1.4）
   nextBehaviorAt = Date.now() + 8000 + Math.random() * 5000;
   lastActivity = Date.now();
@@ -222,7 +233,6 @@ const EVENT_ANIM = {
   thinking:    [120000, 2, 'work'],    // agent_start      → 托腮思考
   typing:      [120000, 2, 'work'],    // 工具执行中       → 敲键盘打工
   spacing_out: [3000, 2, 'once'],      // 压缩上下文       → 发呆（1 轮）
-  sleep:       [3900, 1, 'once'],      // session 关闭     → 趴下睡（1 轮多）
 };
 
 window.buddy.onPetEvent((e, ms) => {
@@ -266,11 +276,21 @@ setInterval(() => {
   if (eventMode) return;                               // 事件占着，睡意/自娱都不掺和
 
   const idleMs = now - lastActivity;
-  if (idleMs > NOD_AFTER) {                            // 打瞌睡：一直保持，自娱动作停掉
+  if (idleMs > SLEEP_AFTER) {                          // 趴下安睡
+    if (drowsy !== 'sleep') { drowsy = 'sleep'; render(); }
+    return;
+  }
+  if (idleMs > NOD_AFTER) {                            // 打瞌睡：点头循环，自娱停掉
     if (drowsy !== 'nod') { drowsy = 'nod'; render(); }
     return;
   }
   if (drowsy) { drowsy = null; render(); }
+
+  if (mouseNear) {                                     // 鼠标在附近：优先看着鼠标，不演自娱
+    if (mode !== 'idle') { mode = 'idle'; render(); }
+    nextBehaviorAt = now + GAP_MIN;
+    return;
+  }
 
   if (now >= behaviorHoldUntil) {                      // 活跃期：自娱随机
     if (mode !== 'idle') { mode = 'idle'; render(); }
@@ -320,7 +340,7 @@ document.addEventListener('mouseup', (e) => {
 });
 
 window.__petState = () => JSON.stringify({
-  mode, look, frame: frameName(), drowsy, eventMode, workFallback,
+  mode, look, frame: frameName(), drowsy, eventMode, workFallback, mouseNear, mouseDist,
   imgOK: img.complete && img.naturalWidth > 0, imgSrc: img.getAttribute('src'),
   idleSec: Math.round((Date.now() - lastActivity) / 1000),
   behaviorHoldMs: Math.round(behaviorHoldUntil - Date.now()),
