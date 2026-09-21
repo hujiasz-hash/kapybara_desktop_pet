@@ -85,6 +85,7 @@ pub fn scale_at_phys(app: &AppHandle, x: i32, y: i32) -> f64 {
     primary_scale(app)
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Copy)]
 pub struct RectCss {
     pub x: f64,

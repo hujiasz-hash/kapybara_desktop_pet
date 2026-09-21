@@ -1,6 +1,6 @@
 ---
 title: kapybara-buddy 使用说明
-version: v4.0
+version: v4.1
 author: 胡嘉
 date: 2026-09-21
 ---
@@ -53,6 +53,12 @@ date: 2026-09-21
 | v3.9 | 2026-09-19 | 胡嘉 | 方向判定阈值 55/75px→30px（原阈值比 50px 触发圈还大，凑近时只能显示正面；现在鼠标压在它身上左右移动，头会跟着转） |
 | v3.10 | 2026-09-19 | 胡嘉 | 方向判定阈值 30px→20px（鼠标在它身上偏 20px 以上才转头，更容易停在正面） |
 | v4.0 | 2026-09-21 | 胡嘉 | 去 Electron 重构：Tauri v2 + 系统 WebView（WKWebView/WebView2），装包从 289MB node_modules 变 13MB 单二进制；前端 HTML/PNG 帧零改动（window.buddy 桥接层用注入 shim 等价替换）；pi 事件通道/热键/拖动边界学习/双后端问答全部保留；移除 KB_PROXY（原只影响渲染进程）与 KB_DEBUG_SHOT（无对应截图 API）；详见 src-tauri/ |---
+| v4.1 | 2026-09-21 | 胡嘉 | 支持 Antigravity 与 Claude Code 官方生命周期 Hook；重构事件通道为多 Agent 会话聚合引擎（解决并发冲突、早退误睡与僵尸会话自愈）；提供 agents/ 一键安装脚本 |
+
+## 链接
+- 无
+
+---
 
 ## 是什么
 
@@ -114,54 +120,71 @@ cd ~/Desktop/Working/2026-09_kapybara-buddy
 **睡眠待机分两段**：鼠标静止 30s → 打瞌睡（点头循环，**不含**"惊醒"帧）；再不动 30s（共 60s）→ 趴下安睡。鼠标一动立刻播完整版"坐立瞌睡惊醒"（那帧眼睛圆睁+冒汗只在此时出现），然后回正常。
 | 交互 | 左键拖动 / 右键 | 被拎悬空扑腾 / 随机换一个自娱动作 |
 
-**形态（有 hook，pi 驱动）**：见下节。`thinking/typing/inspiration/angry_zen/heart/cheering` 六个动作**专供 pi**，不会出现在自娱池里——避免"没干活却在敲键盘"的假动作。
+**形态（有 hook，Agent 驱动）**：见下节。`thinking/typing/inspiration/angry_zen/heart/cheering` 六个动作专供 AI Agent 驱动，不会出现在自娱池里——避免"没干活却在敲键盘"的假动作。
 
-## pi 集成（可选）：卡皮巴拉跟着 pi 的 session 状态演动画
+## AI Agent 联动（Antigravity / Claude Code / pi）
 
-装一个 pi 扩展（`pi-extension/kapybara-bridge.ts`），桌宠就能感知 pi 的 session 生命周期：
+桌宠提供本地统一的 Agent 事件通道（`http://127.0.0.1:17898/agent-event`），支持将 **Antigravity**、**Claude Code** 和 **pi** 的生命周期事件直接推给卡皮巴拉：
 
-| pi 事件 | 含义 | 卡皮巴拉 |
-| --- | --- | --- |
-| `session_start` | 新 session / resume / reload | 捧爱心迎接（2.3s） |
-| `agent_start` | 开始想 | 托腮思考（持续态） |
-| `tool_execution_start` | 真在动手（读文件/跑命令） | 敲键盘打工（持续态） |
-| `tool_execution_end` 成功 | 工具跑完 | 灵光一现（1.8s） |
-| `tool_execution_end` 失败 | 工具报错 | 气到冒烟（2.5s） |
-| `agent_settled` | 干完、等你输入 | 欢呼（3.8s） |
-| `session_compact` | 压缩上下文 | 灵魂出窍发呆（3s） |
-| `session_shutdown` | session 关闭 | 趴下睡（3s） |
+| 动作语义 | 卡皮巴拉动效 | 动作类型 | Antigravity 事件 | Claude Code 事件 | pi 事件 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **会话启动** | `heart` (捧爱心 3.2s) | 瞬时 (Pri 2) | （IDE 打开/注入） | `SessionStart` | `session_start` |
+| **深度思考** | `thinking` (托腮思考) | 工作态 (Pri 2) | `PreInvocation` | `UserPromptSubmit` | `agent_start` |
+| **动手打工** | `typing` (敲键盘) | 工作态 (Pri 1) | `PreToolUse` | `PreToolUse` | `tool_execution_start` |
+| **工具成功** | `inspiration` (电灯泡 2.5s) | 瞬时 (Pri 2) | `PostToolUse` (无 error) | `PostToolUse` | `tool_execution_end` (ok: true) |
+| **工具失败** | `angry_zen` (气到冒烟 3.5s) | 瞬时 (Pri 3) | `PostToolUse` (含 error) | `PostToolUseFailure` | `tool_execution_end` (ok: false) |
+| **上下文压缩** | `spacing_out` (灵魂发呆 3.0s) | 瞬时 (Pri 2) | — | `PreCompact` | `session_compact` |
+| **任务搞定** | `cheering` (欢呼雀跃 3.2s) | 瞬时 (Pri 3) | `Stop` | `Stop` | `agent_settled` |
+| **会话结束** | `sleep` (趴下安睡 3.0s) | 瞬时 (Pri 2) | （进程销毁） | `SessionEnd` | `session_shutdown` |
 
-用 `agent_settled` 而不是 `agent_end`：后者之后 pi 还可能自动重试、压缩后重试或处理排队消息，只有前者代表"真的不会再自动继续了"。
+### 一键安装与配置 Hook
 
-**工作态兜底**：`thinking`/`typing` 是持续态（挂着直到下一个事件），`inspiration`/`angry_zen`/`heart`/`cheering` 是瞬时反馈。瞬时反馈播完，如果 pi 还在干活就自动回到工作态——所以"跑完一个工具亮个灯泡"之后不会僵在灯泡上。
+项目内置自动化安装与管理脚本，自动备份现有配置并在独立命名空间注入，零冲突随时还原：
 
-**抢占规则**（踩过坑）：不能简单地"优先级低就忽略"——真实事件几乎同时到达（`session_start` 到 `agent_start` 只隔零点几秒），长保持期会把后面的事件全吃掉，卡皮巴拉就一直捧着爱心。现在：同名事件在保持期内重复到达才忽略（防抖）；新事件总能接管；例外是高优先级的瞬时反馈（欢呼 3 / 生气 3）正在播时，低优先级事件让路。
+```bash
+# 查看当前 Antigravity / Claude Code Hook 安装状态
+./agents/install-hooks.sh status
 
-**安装**（链接到本仓库源文件，改动只维护一份）：
+# 一键安装（自动备份 ~/.gemini/config/hooks.json 和 ~/.claude/settings.json）
+./agents/install-hooks.sh install
 
+# 随时一键完整卸载还原
+./agents/install-hooks.sh uninstall
+```
+
+**pi 扩展安装**：
 ```bash
 ln -sf ~/Desktop/Working/2026-09_kapybara-buddy/pi-extension/kapybara-bridge.ts ~/.pi/agent/extensions/kapybara-bridge.ts
 ```
 
-然后在 pi 里 `/reload`（或新开 session）生效——**当前已开着的 session 不会自动挂上**。
+### 多 Agent 并发与冲突仲裁机制
 
-**通道与安全**：扩展把事件 POST 到 `http://127.0.0.1:17898/pi-event`（桌宠起的本地回环服务，仅本机可访问）。桌宠没启动时扩展静默忽略（250ms 超时），绝不影响 pi。事件只带事件类型和 cwd，**不带对话内容**。改端口：桌宠端改 `src-tauri/src/pievent.rs` 的 `PI_EVENT_PORT`，扩展端设 `KAPY_EVENT_URL`。
+当用户同时开启多个终端或项目，并发运行 Antigravity、Claude Code 或 pi 时，系统通过会话聚合引擎（`SessionTracker`）统一仲裁：
+1. **防早退误休眠**：若 Agent A 正在跑长时间工具（`typing`），Agent B 回答完触发了欢呼（`cheering`），桌宠为 Agent B 短暂欢呼 3 秒后，会自动回退至 Agent A 的 `typing` 打工态，绝不会意外躺平睡觉；
+2. **动手优先于动脑**：任意活跃 Agent 在跑工具（`typing`）能级高于思考（`thinking`）；
+3. **防僵尸卡死（TTL 心跳租约）**：若在终端对运行中的 Agent 执行 `Ctrl+C` 强退，会话引擎在 120s~180s 无新事件后自动清理僵尸会话，桌宠自愈恢复正常待机；
+4. **非阻塞安全保障**：Hook 脚本采用纯 `/bin/sh` + 异步后台 `curl`，耗时小于 2ms，桌宠未启动时静默跳过，绝不阻塞开发终端。
 
-## 架构（v4.0 起）
+## 架构（v4.1 起）
 
 ```
-app/                     前端（打包进二进制，逻辑与 Electron 版完全一致）
-  pet.html               桌宠渲染层（帧动画/状态机/拖动交互）
+app/                     前端（打包进二进制）
+  pet.html               桌宠渲染层（帧动画/多Agent状态机/拖动交互）
   index.html             问答浮窗 UI
   frames/                PNG 帧素材
-src-tauri/               Rust 主进程（原 main.js 的职责）
-  src/main.rs            窗口创建/热键/光标轮询/生命周期/自动化测试
-  src/drag.rs            拖动绝对坐标 + 台前调度边界学习（对应 main.js 的 pet-drag-*）
+src-tauri/               Rust 主进程（Tauri v2）
+  src/main.rs            窗口创建/热键/光标轮询/生命周期
+  src/agent_event.rs     多 Agent 事件通道与会话聚合仲裁引擎（:17898）
+  src/pievent.rs         兼容旧版引用的向后兼容层
+  src/drag.rs            拖动绝对坐标 + 台前调度边界学习
   src/answer.rs          pollinations + agy 双后端（流式）
-  src/pievent.rs         pi 事件 HTTP 服务（:17898）
-  src/bridge.rs          window.buddy 注入 shim（等价 preload.js，前端零改动）
-  src/commands.rs        IPC 命令（对应 ipcMain handler）
-pi-extension/            pi 扩展（不变）
+  src/bridge.rs          window.buddy 注入 shim
+  src/commands.rs        IPC 命令
+agents/                  Hook 脚本与集成工具
+  antigravity/           Antigravity hook 脚本与 hooks.json
+  claude/                Claude Code hook 脚本与配置片段
+  install-hooks.sh       一键安装/卸载/状态管理脚本
+pi-extension/            pi 扩展
 ```
 
 ## 配置

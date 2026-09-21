@@ -31,7 +31,7 @@ const SHIM: &str = r#"(function () {
     onAnswerChunk: function (cb) { listenEv('answer-chunk', function (t) { cb(t); }); },
     onAnswerDone: function (cb) { listenEv('answer-done', function () { cb(); }); },
     onCursor: function (cb) { listenEv('cursor', cb); },
-    onPetEvent: function (cb) { listenEv('pet-event', function (p) { cb(p.e, p.ms); }); },
+    onPetEvent: function (cb) { listenEv('pet-event', function (p) { cb(p.e, p.ms, p.fallback, p.activeCount); }); },
   };
 })();"#;
 

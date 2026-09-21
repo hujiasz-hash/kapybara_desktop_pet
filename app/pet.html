@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { background: transparent; overflow: hidden; width: 100%; height: 100%;
+  html, body { background: transparent !important; background-color: transparent !important; overflow: hidden; width: 100%; height: 100%;
                font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
                user-select: none; cursor: pointer; }
   img { position: absolute; inset: 0; width: 100%; height: 100%;
@@ -125,6 +125,7 @@ let drowsy = null;
 let eventMode = null, eventKind = null, eventHoldUntil = 0, eventHoldPri = 0;
 let workFallback = null;            // 工作态兜底：瞬时反馈播完回到它（agent_settled 时清空）
 let behaviorHoldUntil = 0;
+let manualHoldUntil = 0;             // 用户手动右键切换的动作保持期（优先级高于 mouseNear 与 eventMode）
 let nextBehaviorAt = Date.now() + 6000 + Math.random() * 4000;
 let lastMouse = { x: -1, y: -1 };
 let mouseNear = false;
@@ -135,12 +136,13 @@ const dragged = () => mode === 'dragged';
 function frameName() {
   const now = Date.now();
   if (mode === 'dragged') return 'picked_up';                  // 1 被拖动
-  if (eventMode && now < eventHoldUntil) return eventMode;     // 2 hook 事件
-  if (drowsy === 'sleep') return 'sleep';                      // 3 趴下安睡（保持）
-  if (drowsy === 'nod') return 'nodding_calm';                 // 4 打瞌睡：点头循环，不播"惊醒"帧
-  if (mouseNear) return look;                                  // 5 鼠标在附近 → 看着鼠标（优先于自娱）
-  if (now < behaviorHoldUntil && mode !== 'idle') return mode; // 6 自娱 / 惊醒过渡
-  return look;                                                 // 7 朝向待机
+  if (now < manualHoldUntil && mode !== 'idle') return mode;   // 2 用户手动右键切换动作（交互优先，不被鼠标靠近或后台Agent覆盖）
+  if (eventMode && now < eventHoldUntil) return eventMode;     // 3 hook 事件
+  if (drowsy === 'sleep') return 'sleep';                      // 4 趴下安睡（保持）
+  if (drowsy === 'nod') return 'nodding_calm';                 // 5 打瞌睡：点头循环，不播"惊醒"帧
+  if (mouseNear) return look;                                  // 6 鼠标在附近 → 看着鼠标（优先于自娱）
+  if (now < behaviorHoldUntil && mode !== 'idle') return mode; // 7 自娱 / 惊醒过渡
+  return look;                                                 // 8 朝向待机
 }
 function render() {
   const k = frameName();
@@ -172,6 +174,7 @@ window.buddy.onCursor(({ mx, my, px, py }) => {
 /* 醒来：先演一轮"坐立瞌睡惊醒"（末帧就是惊醒），再回到正常 */
 function wake() {
   drowsy = null;
+  manualHoldUntil = 0;
   mode = 'nodding';        // 完整版：末帧就是"惊醒"（眼睛圆睁+汗），只有鼠标动能把它放出来
   behaviorHoldUntil = Date.now() + 3600;                        // 一轮 nodding（放慢后 800+1000+800 各 ×1.4）
   nextBehaviorAt = Date.now() + 8000 + Math.random() * 5000;
@@ -199,15 +202,22 @@ function weightedPick(pool) {
   for (const b of p) { if ((r -= b[2]) < 0) return b; }
   return p[0];
 }
-function playBehavior(preferSwap) {
-  let pick = weightedPick();
-  if (preferSwap && pick[0] === mode) pick = weightedPick();     // 右键时尽量换个动作
-  const [name, dur] = pick;
+function playBehavior(preferSwap, isManual) {
+  let pool = IDLE_BEHAVIORS;
+  if (preferSwap && IDLE_BEHAVIORS.length > 1) {
+    const diff = IDLE_BEHAVIORS.filter(b => b[0] !== mode);
+    if (diff.length > 0) pool = diff;
+  }
+  const [name, dur] = weightedPick(pool);
   mode = name;
-  // 注意：这里绝不能刷新 lastActivity —— 自娱行为每几秒触发一次，
-  // 一刷新 lastActivity 就永远到不了 15s/30s 的睡意阈值（旧版就是这么坏掉的）。
-  behaviorHoldUntil = Date.now() + dur;
+  drowsy = null;
+  const now = Date.now();
+  behaviorHoldUntil = now + dur;
+  if (isManual) {
+    manualHoldUntil = behaviorHoldUntil;
+  }
   nextBehaviorAt = behaviorHoldUntil + GAP_MIN + Math.random() * GAP_RAND;
+  lastActivity = now;
   render();
 }
 
@@ -217,9 +227,9 @@ function playBehavior(preferSwap) {
 let lastRightSwitch = 0;
 function rightSwitch() {
   const now = Date.now();
-  if (now - lastRightSwitch < 400) return;
+  if (now - lastRightSwitch < 300) return;
   lastRightSwitch = now;
-  if (mode !== 'dragged') playBehavior(true);
+  if (mode !== 'dragged') playBehavior(true, true);
 }
 document.addEventListener('contextmenu', (e) => { e.preventDefault(); rightSwitch(); });
 
@@ -244,7 +254,9 @@ const EVENT_ANIM = {
   spacing_out: [3000, 2, 'once'],      // 压缩上下文       → 发呆（1 轮）
 };
 
-window.buddy.onPetEvent((e, ms) => {
+let activeAgentCount = 0;
+
+window.buddy.onPetEvent((e, ms, fallback, activeCount) => {
   const now = Date.now();
   if (e === 'drag-lost') { endDrag(); return; }        // 主进程兜底：mouseup 丢失强制恢复
   if (mode === 'dragged') return;                      // 拖动优先，事件不打扰
@@ -258,8 +270,18 @@ window.buddy.onPetEvent((e, ms) => {
   const dur = ms || defMs;
   eventMode = e; eventKind = kind;
   eventHoldUntil = now + dur; eventHoldPri = pri;
-  if (kind === 'work') workFallback = e;               // 记住工作态，供瞬时反馈返回
-  if (e === 'cheering' || e === 'sleep') workFallback = null;   // 干完了 / 收工：不再回工作态
+
+  if (typeof activeCount === 'number') activeAgentCount = activeCount;
+
+  if (fallback !== undefined) {
+    // 由多 Agent 聚合引擎直接指定当前的工作态回退（若还有其他 Agent 在打工则绝不早退）
+    workFallback = fallback;
+  } else {
+    // 兼容传统单 Agent / 本地问答模式
+    if (kind === 'work') workFallback = e;
+    if (e === 'cheering' || e === 'sleep') workFallback = null;
+  }
+
   lastActivity = now;
   drowsy = null;
   render();
@@ -269,6 +291,9 @@ window.buddy.onPetEvent((e, ms) => {
 setInterval(() => {
   const now = Date.now();
   if (dragged()) return;
+
+  // 手动右键动作保持中：不被 tick 重置或自娱打断
+  if (now < manualHoldUntil) return;
 
   // 事件保持期到点
   if (eventMode && now >= eventHoldUntil) {
@@ -310,7 +335,7 @@ setInterval(() => {
 /* ---------- 拖动：被提溜（拖动全程算活动，不会睡着） ---------- */
 let down = null, dragging = false;
 document.addEventListener('mousedown', (e) => {
-  if (e.button === 2) {                                // 右键：换个动画
+  if (e.button === 2 || (e.button === 0 && e.ctrlKey)) { // 右键（含 Mac Ctrl+单击）：换个动画
     rightSwitch();
     return;
   }
@@ -324,6 +349,7 @@ document.addEventListener('mousedown', (e) => {
 function endDrag() {
   mode = 'idle'; look = 'front';
   behaviorHoldUntil = 0;   // 拖动打断行为：保持期一并作废
+  manualHoldUntil = 0;
   window.buddy.petDragEnd();
   down = null;
   dragging = false;
@@ -349,7 +375,7 @@ document.addEventListener('mouseup', (e) => {
 });
 
 window.__petState = () => JSON.stringify({
-  mode, look, frame: frameName(), drowsy, eventMode, workFallback, mouseNear, mouseDist,
+  mode, look, frame: frameName(), drowsy, eventMode, workFallback, activeAgentCount, mouseNear, mouseDist,
   imgOK: img.complete && img.naturalWidth > 0, imgSrc: img.getAttribute('src'),
   idleSec: Math.round((Date.now() - lastActivity) / 1000),
   behaviorHoldMs: Math.round(behaviorHoldUntil - Date.now()),

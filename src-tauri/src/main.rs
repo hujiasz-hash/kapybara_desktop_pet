@@ -5,6 +5,7 @@
 //! - 后端：pollinations（默认，零 key 免费网关）/ agy（KB_BACKEND=agy，流式）
 //! - pi 扩展事件通道：127.0.0.1:17898（见 pievent.rs）
 
+mod agent_event;
 mod answer;
 mod bridge;
 mod commands;
@@ -51,7 +52,7 @@ fn main() {
 
             create_windows(app)?;
             start_cursor_loop(handle.clone());
-            pievent::start(handle.clone());
+            agent_event::start(handle.clone());
             println!("[kapybara-buddy] 后端: {}", answer::backend_desc());
 
             // 全局快捷键（系统级，无需辅助功能授权）

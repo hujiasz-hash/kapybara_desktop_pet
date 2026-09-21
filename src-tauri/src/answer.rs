@@ -44,7 +44,26 @@ pub fn send_chunk(app: &AppHandle, text: &str) {
 }
 
 pub fn pet_event(app: &AppHandle, ev: &str, ms: Option<u64>) {
-    let _ = app.emit_to("pet", "pet-event", serde_json::json!({ "e": ev, "ms": ms }));
+    pet_event_full(app, ev, ms, None, 0);
+}
+
+pub fn pet_event_full(
+    app: &AppHandle,
+    ev: &str,
+    ms: Option<u64>,
+    fallback: Option<&str>,
+    active_count: usize,
+) {
+    let _ = app.emit_to(
+        "pet",
+        "pet-event",
+        serde_json::json!({
+            "e": ev,
+            "ms": ms,
+            "fallback": fallback,
+            "activeCount": active_count,
+        }),
+    );
 }
 
 /// 回答完成：解锁 busy、通知前端、桌宠欢呼、4 秒后自动隐藏（未聚焦时）

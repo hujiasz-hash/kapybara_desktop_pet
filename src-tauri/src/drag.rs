@@ -86,12 +86,6 @@ pub fn on_drag_end(app: &AppHandle) {
     if let Some(h) = handle {
         h.abort();
     }
-    // 拖动中的多次 setPosition 会让 WKWebView 在窗口矩形内画出灰色背景
-    // （透明性失效）。拖动结束重新声明透明背景：wry 的 set_background_color 在
-    // macOS 上会重设 drawsBackground=false（与 transparent 特性同一个 KVC 键）。
-    if let Some(pet) = app.get_webview_window("pet") {
-        let _ = pet.set_background_color(Some(tauri::window::Color(0, 0, 0, 0)));
-    }
 }
 
 /// 窗口位置变化：识别「系统弹回」（台前调度条），确认式学习真实边界（README v2.2~v2.4）
