@@ -64,6 +64,15 @@ const PET_DEBUG_STATE: &str = r#"(function () {
   }, 300);
 })();"#;
 
+/// KB_PET_DEBUG：鼠标事件探针（临时诊断触控板右键问题用，capture 阶段捕获全部）
+const PET_EVENT_TRACE: &str = r#"(function () {
+  ['mousedown','mouseup','contextmenu','pointerdown','pointerup'].forEach(function (t) {
+    document.addEventListener(t, function (e) {
+      if (window.__kbPetLog) window.__kbPetLog('info', '[pet-ev] ' + t + ' btn=' + e.button + ' buttons=' + e.buttons);
+    }, true);
+  });
+})();"#;
+
 fn pet_init_js() -> String {
     let mut js = String::new();
     js.push_str(SHIM);
@@ -72,6 +81,7 @@ fn pet_init_js() -> String {
     js.push_str("(function(){ function p(){ if(window.__TAURI__){ window.__TAURI__.core.invoke('pet_log',{level:'info',message:'[pet] shim-ready kbFast='+!!window.__KB_FAST}).catch(function(){}); } else { setTimeout(p,50); } } p(); })();");
     if std::env::var("KB_PET_DEBUG").is_ok() {
         js.push_str(PET_DEBUG_STATE);
+        js.push_str(PET_EVENT_TRACE);
     }
     if std::env::var("KB_FAST").is_ok() {
         js.push_str("window.__KB_FAST = true;");

@@ -211,8 +211,17 @@ function playBehavior(preferSwap) {
   render();
 }
 
-/* ---------- 右键：换个动画 ---------- */
-document.addEventListener('contextmenu', (e) => e.preventDefault());   // 只屏蔽系统菜单（切动作在 mousedown(2)）
+/* ---------- 右键：换个动画 ----------
+   入口有两处：mousedown(button=2)（标准鼠标/合成事件路径）+ contextmenu（触控板双指
+   在 WKWebView 上可能只派发 contextmenu 不派发 mousedown）。400ms 防抖防双触发。 */
+let lastRightSwitch = 0;
+function rightSwitch() {
+  const now = Date.now();
+  if (now - lastRightSwitch < 400) return;
+  lastRightSwitch = now;
+  if (mode !== 'dragged') playBehavior(true);
+}
+document.addEventListener('contextmenu', (e) => { e.preventDefault(); rightSwitch(); });
 
 /* ---------- hook 事件（pi 侧推送） ----------
    动作: [默认时长ms, 优先级, 类型]
@@ -301,8 +310,8 @@ setInterval(() => {
 /* ---------- 拖动：被提溜（拖动全程算活动，不会睡着） ---------- */
 let down = null, dragging = false;
 document.addEventListener('mousedown', (e) => {
-  if (e.button === 2) {                                // 右键：换个动画（mousedown 入口对轻点/按压都稳定）
-    if (mode !== 'dragged') playBehavior(true);
+  if (e.button === 2) {                                // 右键：换个动画
+    rightSwitch();
     return;
   }
   if (e.button !== 0) return;                          // 其余只认左键
