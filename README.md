@@ -1,8 +1,8 @@
 ---
 title: kapybara-buddy 使用说明
-version: v3.10
+version: v4.0
 author: 胡嘉
-date: 2026-09-19
+date: 2026-09-21
 ---
 
 # kapybara-buddy 使用说明
@@ -51,7 +51,8 @@ date: 2026-09-19
 | v3.7 | 2026-09-19 | 胡嘉 | 朝向触发圈从 300px 缩到 100px（约贴到跟前才看鼠标）；顺手补齐 README 里 v3.6 漏改的行为描述 |## 链接
 | v3.8 | 2026-09-19 | 胡嘉 | 朝向触发圈 100px→50px（圈已小于方向判定阈值，凑近时基本只显示正面；远处待机时的朝向跟随不受影响） |- 无
 | v3.9 | 2026-09-19 | 胡嘉 | 方向判定阈值 55/75px→30px（原阈值比 50px 触发圈还大，凑近时只能显示正面；现在鼠标压在它身上左右移动，头会跟着转） |
-| v3.10 | 2026-09-19 | 胡嘉 | 方向判定阈值 30px→20px（鼠标在它身上偏 20px 以上才转头，更容易停在正面） |---
+| v3.10 | 2026-09-19 | 胡嘉 | 方向判定阈值 30px→20px（鼠标在它身上偏 20px 以上才转头，更容易停在正面） |
+| v4.0 | 2026-09-21 | 胡嘉 | 去 Electron 重构：Tauri v2 + 系统 WebView（WKWebView/WebView2），装包从 289MB node_modules 变 13MB 单二进制；前端 HTML/PNG 帧零改动（window.buddy 桥接层用注入 shim 等价替换）；pi 事件通道/热键/拖动边界学习/双后端问答全部保留；移除 KB_PROXY（原只影响渲染进程）与 KB_DEBUG_SHOT（无对应截图 API）；详见 src-tauri/ |---
 
 ## 是什么
 
@@ -64,7 +65,7 @@ date: 2026-09-19
 | `pollinations` | **默认** | 零注册零 key，实测 1~2 秒；GPT-4o-mini 级模型；问题会经过第三方服务，别问敏感内容 |
 | `agy` | `KB_BACKEND=agy`（需装 CLI 并登录） | 9~11 秒，质量更好 |
 
-技术底座：Electron（透明无边框窗 + 系统级全局快捷键，无需辅助功能授权）。
+技术底座：Tauri v2（透明无边框窗 + 系统级全局快捷键，无需辅助功能授权；macOS 用系统 WKWebView，Windows 用 WebView2）。
 
 ## macOS 启动 / 停止
 
@@ -73,21 +74,13 @@ cd ~/Desktop/Working/2026-09_kapybara-buddy
 ./start.sh        # 后台启动（日志: ~/.kapybara-buddy.log）
 ./start.sh stop   # 停止
 ./start.sh log    # 看日志
+./start.sh build  # 重新编译 release
 ```
 
 ## Windows 部署
 
-1. 安装 Node.js LTS（nodejs.org 下载即可）
-2. 把整个项目文件夹拷到 Windows 机器，在该目录下：
-
-（可选）想要更好的回答质量：安装 Antigravity CLI 并登录（https://antigravity.google/docs/cli/install ），装了自动切换到 agy 后端。
-
-```bat
-npm install
-npm start
-```
-
-或直接双击 `start.bat`。之后 `Alt+G` 呼出。
+1. 安装 Rust 工具链（rustup.rs）
+2. 把整个项目文件夹拷到 Windows 机器，在该目录下双击 `start.bat`（首次会自动编译，产物在 `%LOCALAPPDATA%\kapybara-buddy-target`）。之后 `Alt+G` 呼出。
 
 ## 快捷键与交互
 
@@ -104,7 +97,7 @@ npm start
 
 ## 素材与形态
 
-**素材**：17 个动作 × 3 帧（420×420 透明 PNG，`ui/frames/`），另有朝向四帧（`idle_front/left/right/up.png`，沿用旧素材、已下移 19px 与新帧对齐脚底线）。每个动作的帧序和节奏**照抄作者给的 GIF**——不是简单 `1→2→3` 循环：`typing` 是 `[1,2,3,2]` 乒乓、`clover` 是 `[1,2,1,2,3]`、`sleep`/`heart`/`angry_zen` 是 `[1,2,3,1]`；每帧时长也可能不同（`nodding` 是 800/1000/800ms）。所以渲染层用递归 `setTimeout` 而非固定 `setInterval`。旧的 18 帧素材在 `ui/frames/legacy_18/`。
+**素材**：17 个动作 × 3 帧（420×420 透明 PNG，`app/frames/`），另有朝向四帧（`idle_front/left/right/up.png`，沿用旧素材、已下移 19px 与新帧对齐脚底线）。每个动作的帧序和节奏**照抄作者给的 GIF**——不是简单 `1→2→3` 循环：`typing` 是 `[1,2,3,2]` 乒乓、`clover` 是 `[1,2,1,2,3]`、`sleep`/`heart`/`angry_zen` 是 `[1,2,3,1]`；每帧时长也可能不同（`nodding` 是 800/1000/800ms）。所以渲染层用递归 `setTimeout` 而非固定 `setInterval`。旧的 18 帧素材在 `app/frames/legacy_18/`。
 
 **形态（无 hook，桌宠自己活着）**
 
@@ -152,30 +145,58 @@ ln -sf ~/Desktop/Working/2026-09_kapybara-buddy/pi-extension/kapybara-bridge.ts 
 
 然后在 pi 里 `/reload`（或新开 session）生效——**当前已开着的 session 不会自动挂上**。
 
-**通道与安全**：扩展把事件 POST 到 `http://127.0.0.1:17898/pi-event`（桌宠起的本地回环服务，仅本机可访问）。桌宠没启动时扩展静默忽略（250ms 超时），绝不影响 pi。事件只带事件类型和 cwd，**不带对话内容**。改端口：桌宠端改 `main.js` 的 `PI_EVENT_PORT`，扩展端设 `KAPY_EVENT_URL`。
+**通道与安全**：扩展把事件 POST 到 `http://127.0.0.1:17898/pi-event`（桌宠起的本地回环服务，仅本机可访问）。桌宠没启动时扩展静默忽略（250ms 超时），绝不影响 pi。事件只带事件类型和 cwd，**不带对话内容**。改端口：桌宠端改 `src-tauri/src/pievent.rs` 的 `PI_EVENT_PORT`，扩展端设 `KAPY_EVENT_URL`。
 
-## 配置（main.js 顶部）
+## 架构（v4.0 起）
 
-| 常量 | 默认值 | 说明 |
+```
+app/                     前端（打包进二进制，逻辑与 Electron 版完全一致）
+  pet.html               桌宠渲染层（帧动画/状态机/拖动交互）
+  index.html             问答浮窗 UI
+  frames/                PNG 帧素材
+src-tauri/               Rust 主进程（原 main.js 的职责）
+  src/main.rs            窗口创建/热键/光标轮询/生命周期/自动化测试
+  src/drag.rs            拖动绝对坐标 + 台前调度边界学习（对应 main.js 的 pet-drag-*）
+  src/answer.rs          pollinations + agy 双后端（流式）
+  src/pievent.rs         pi 事件 HTTP 服务（:17898）
+  src/bridge.rs          window.buddy 注入 shim（等价 preload.js，前端零改动）
+  src/commands.rs        IPC 命令（对应 ipcMain handler）
+pi-extension/            pi 扩展（不变）
+```
+
+## 配置
+
+| 环境变量 | 默认 | 说明 |
 | --- | --- | --- |
-| `HOTKEY` | mac `Option+G` / win `Alt+G` | 全局快捷键 |
-| `WIN_W / WIN_H` | 640 / 400 | 窗口尺寸 |
-| `ANSWER_TIMEOUT_MS` | 180000 | 单次回答超时 |
-| `AGY_MODEL` | `gemini-3.8-flash-low` | agy 思考档位，low 最快；置空用 agy 默认；环境变量 `KB_AGY_MODEL` 可覆盖 |
+| `KB_BACKEND` | `pollinations` | 置 `agy` 切 Antigravity CLI 后端（需装 CLI 并登录，质量更好但 9~11s） |
+| `KB_AGY_MODEL` | `gemini-3.8-flash-low` | agy 思考档位，low 最快；置空用 agy 默认 |
+| `KB_PET_DEBUG` | 未开 | 开启后桌宠状态每 300ms 上报到 `$TMPDIR/pet-debug.log` |
+| `KB_FAST` | 未开 | 加速所有时间阈值（测试用） |
+| `KB_TEST_ASK` / `KB_TEST_ASK2` | 未开 | 自动化问答测试，跑完自动退出 |
+
+注：v4.0 起移除 `KB_PROXY`（原 proxy-server 开关只作用于 Electron 渲染进程的网络，问答后端请求在主进程本就不走它）与 `KB_DEBUG_SHOT`（Tauri 无等价截图 API）。窗口尺寸/热键等常量在 `src-tauri/src/main.rs` 与 `geom.rs` 顶部。
+
+## 本机构建注意（macOS）
+
+这台机器的 CLT 是 2020 年的 Xcode 12（clang 12 / ld64-609），其链接产物会被 macOS 26 内核 AMFI 拒绝（rustc 加载 proc-macro 即被 SIGKILL "Code Signature Invalid"）。`src-tauri/.cargo/config.toml` 已改用 Homebrew LLVM/LLD 链接：
+
+```bash
+brew install llvm lld
+```
+
+另外编译产物目录已从项目内（~/Desktop，受 iCloud 同步管理）移到 `~/Library/Caches/kapybara-buddy-target`，避免 fileproviderd 动新鲜 dylib 的元数据触发同款误杀。
 
 ## 网络
 
-默认走系统代理。若需强制代理：
-
-```bash
-KB_PROXY=http://127.0.0.1:7898 npm start
-```
+问答请求（pollinations/agy）直连；需要代理时设系统代理即可（reqwest 会读取系统代理配置）。
 
 ## 自动化测试
 
 ```bash
-KB_TEST_ASK="1+1等于几" npm start   # 自动呼出、提问、打印回答后退出
-KB_DEBUG_SHOT=/tmp/shot.png npm start   # 自动呼出、截图后退出
+cd src-tauri
+KB_TEST_ASK="1+1等于几" cargo run              # 自动呼出、提问、打印回答后退出
+KB_TEST_ASK2="那它的学名叫什么" KB_TEST_ASK="1+1等于几" cargo run   # 两问覆盖测试
+KB_PET_DEBUG=1 cargo run                      # 桌宠状态 300ms 上报，tail $TMPDIR/pet-debug.log
 ```
 
 ## 历史
@@ -183,3 +204,4 @@ KB_DEBUG_SHOT=/tmp/shot.png npm start   # 自动呼出、截图后退出
 - v0.1 Electron 内嵌网页方案（commit 7d4ffba）：重（~300MB）退役
 - v0.2 tkinter + agy（a2d7a75）：macOS 无边框窗口不能成为 key window（无法键盘输入），PyObjC swizzle 补丁路线过深，放弃；Windows 上 tkinter 其实可用，但为统一技术栈放弃
 - v0.3 现方案：Electron 自绘 UI，快捷键/透明/输入全部原生支持，跨平台一致
+- v4.0 去 Electron：Tauri v2（系统 WebView + Rust 主进程），前端零改动平移；仓库从 289MB node_modules 变成 13MB 单二进制

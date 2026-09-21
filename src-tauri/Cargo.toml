@@ -1,0 +1,28 @@
+[package]
+name = "kapybara-buddy"
+version = "4.0.0"
+description = "卡皮巴拉桌宠 + Option+G 快速问答浮窗（Tauri v2，系统 WebView，去 Electron）"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["macos-private-api"] }
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-single-instance = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt", "process", "time", "net", "io-util", "macros", "sync"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+percent-encoding = "2"
+objc = "0.2"
+
+[[bin]]
+name = "kapybara-buddy"
+path = "src/main.rs"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1

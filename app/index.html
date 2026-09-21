@@ -27,7 +27,6 @@
     padding: 8px 14px;
     background: rgba(176, 137, 104, 0.16);
     border-bottom: 2px solid #8a6844;
-    -webkit-app-region: drag;
     user-select: none;
   }
   #bar .title { color: #e2c9a2; font-size: 12px; font-weight: 700; letter-spacing: 2px; }
@@ -84,7 +83,7 @@
 <body>
 <div id="frame">
   <div id="panel">
-    <div id="bar">
+    <div id="bar" data-tauri-drag-region>
       <span class="title">CAPYBARA BUDDY</span>
       <span class="hint">Esc 关闭 · 点外部隐藏 · Enter 提问</span>
     </div>

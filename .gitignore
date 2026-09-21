@@ -6,3 +6,7 @@ __pycache__/
 .idea/
 .vscode/
 *.bak-*
+# Rust 构建产物（默认 target-dir 在 ~/Library/Caches，见 src-tauri/.cargo/config.toml；
+# 这里兜底防误提交）
+src-tauri/target/
+src-tauri/gen/

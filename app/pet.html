@@ -22,11 +22,11 @@
 
 /* ---------- 朝向（静态，沿用旧素材四帧；已下移 19px 与新动作帧对齐到同一脚底线） ---------- */
 const IDLE_SRC = {
-  front: 'ui/frames/idle_front.png',
-  left:  'ui/frames/idle_left.png',
-  right: 'ui/frames/idle_right.png',
-  up:    'ui/frames/idle_up.png',
-  idle:  'ui/frames/idle_front.png',   // 防御：意外用 'idle' 作帧名时不落空
+  front: 'frames/idle_front.png',
+  left:  'frames/idle_left.png',
+  right: 'frames/idle_right.png',
+  up:    'frames/idle_up.png',
+  idle:  'frames/idle_front.png',   // 防御：意外用 'idle' 作帧名时不落空
 };
 
 /* ---------- 逐帧动画表：seq = 用第几帧，durs = 每帧毫秒（与 GIF 一致） ---------- */
@@ -53,7 +53,7 @@ const ANIM = {
 const ANIM_SRC = {};   // 动作名 → 帧 URL 数组（按 seq 展开，index 与播放序号对应）
 for (const [name, a] of Object.entries(ANIM)) {
   const base = a.src || name;                 // 允许复用别的动作的帧文件（如 nodding_calm 用 nodding 的帧）
-  ANIM_SRC[name] = a.seq.map((n) => `ui/frames/${base}_${n}.png`);
+  ANIM_SRC[name] = a.seq.map((n) => `frames/${base}_${n}.png`);
 }
 
 const img = document.createElement('img');
@@ -105,7 +105,7 @@ function tickFrame() {
 }
 
 /* ---------- 节奏参数（?fast=1 测试用短阈值） ---------- */
-const FAST = new URLSearchParams(location.search).has('fast');
+const FAST = new URLSearchParams(location.search).has('fast') || window.__KB_FAST === true;
 const NOD_AFTER   = (FAST ? 3 : 30) * 1000;   // 鼠标静止 30s → 打瞌睡（点头循环，不含"惊醒"帧）
 const SLEEP_AFTER = (FAST ? 6 : 60) * 1000;   // 再不动 30s（共 60s）→ 趴下安睡
 
