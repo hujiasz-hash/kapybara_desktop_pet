@@ -1,16 +1,8 @@
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::collections::BTreeMap;
 use std::sync::Mutex;
 use std::time::Instant;
 
-use tauri::Manager;
-
-/// 当前进行中的回答，stop 时按类型中止
-pub enum Active {
-    /// pollinations 任务句柄（abort 即中止）
-    Pollinations(tauri::async_runtime::JoinHandle<()>),
-    /// agy 子进程（存于 child 字段，kill 即中止）
-    Agy,
-}
+use crate::usage::{UsageConfig, UsageData};
 
 /// 拖动状态：绝对坐标法（按下时窗口位置 + 鼠标净位移），见 main.js v1.3 的设计
 pub struct DragState {
@@ -35,29 +27,39 @@ pub struct Limit {
     pub max_x: i32,
 }
 
+/// 订阅用量的内存态：当前配置 + 各账号最近一次查询结果
+pub struct UsageCore {
+    pub config: UsageConfig,
+    /// "copilot" | "zhipu" | "custom" → 最近一次查询结果
+    pub usages: BTreeMap<String, UsageData>,
+    pub fetched_at: Option<i64>,
+}
+
+impl Default for UsageCore {
+    fn default() -> Self {
+        Self {
+            config: UsageConfig::default(),
+            usages: BTreeMap::new(),
+            fetched_at: None,
+        }
+    }
+}
+
 pub struct AppState {
-    pub busy: AtomicBool,
-    pub active: Mutex<Option<Active>>,
-    pub child: Mutex<Option<tokio::process::Child>>,
     pub drag: Mutex<Option<DragState>>,
     pub pet_limit: Mutex<Option<Limit>>,
     pub move_confirm: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
-    /// KB_TEST_ASK 自动化测试：收集回答文本 / 统计完成次数
-    pub test_buf: Mutex<String>,
-    pub test_done: AtomicU32,
+    /// 订阅用量共享状态（轮询器写，命令/事件读）
+    pub usage: Mutex<UsageCore>,
 }
 
 impl Default for AppState {
     fn default() -> Self {
         Self {
-            busy: AtomicBool::new(false),
-            active: Mutex::new(None),
-            child: Mutex::new(None),
             drag: Mutex::new(None),
             pet_limit: Mutex::new(None),
             move_confirm: Mutex::new(None),
-            test_buf: Mutex::new(String::new()),
-            test_done: AtomicU32::new(0),
+            usage: Mutex::new(UsageCore::default()),
         }
     }
 }
@@ -66,8 +68,4 @@ impl Limit {
     pub fn open() -> Self {
         Self { min_x: i32::MIN / 2, max_x: i32::MAX / 2 }
     }
-}
-
-pub fn test_done_count(app: &tauri::AppHandle) -> u32 {
-    app.state::<AppState>().test_done.load(Ordering::SeqCst)
 }

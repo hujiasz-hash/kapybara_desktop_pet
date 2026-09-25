@@ -54,6 +54,7 @@ date: 2026-09-21
 | v3.10 | 2026-09-19 | 胡嘉 | 方向判定阈值 30px→20px（鼠标在它身上偏 20px 以上才转头，更容易停在正面） |
 | v4.0 | 2026-09-21 | 胡嘉 | 去 Electron 重构：Tauri v2 + 系统 WebView（WKWebView/WebView2），装包从 289MB node_modules 变 13MB 单二进制；前端 HTML/PNG 帧零改动（window.buddy 桥接层用注入 shim 等价替换）；pi 事件通道/热键/拖动边界学习/双后端问答全部保留；移除 KB_PROXY（原只影响渲染进程）与 KB_DEBUG_SHOT（无对应截图 API）；详见 src-tauri/ |---
 | v4.1 | 2026-09-21 | 胡嘉 | 支持 Antigravity 与 Claude Code 官方生命周期 Hook；重构事件通道为多 Agent 会话聚合引擎（解决并发冲突、早退误睡与僵尸会话自愈）；提供 agents/ 一键安装脚本 |
+| v5.0 | 2026-09-25 | 胡嘉 | 去问答，转订阅用量面板：①左键点桌宠改弹订阅配置（Copilot 默认 / 智谱中国只填 Key / 自定义 URL+Key，URL 自适应识别博世 MFC、bigmodel.cn、api.z.ai）②鼠标悬停桌宠弹用量面板（Premium 月额度、智谱 5h/周/月 窗口、MFC 月/今日费用+tokens，带重置倒计时与模型 Top5）③删除问答链路（answer.rs / index.html / KB_TEST_ASK），Option+G 改呼出配置面板；用量后台 5min 轮询（KB_USAGE_POLL_SEC 可调）配置存 app_data_dir/usage.json |
 
 ## 链接
 - 无
@@ -62,16 +63,27 @@ date: 2026-09-21
 
 ## 是什么
 
-按 `Option+G`（Windows: `Alt+G`）呼出一个半透明对话框，打字回车提问，后台调用 Antigravity CLI（`agy`，复用 Google 账号登录态，免 API key），回答**流式**显示在窗口里，**每次提问覆盖上一条**。点窗口外自动隐藏。
+一只卡皮巴拉桌宠常驻桌面，**鼠标悬停它就能看你所有 AI 订阅账号的用量**（GitHub Copilot / 智谱 GLM Coding Plan / 博世 MFC），**左键点击进入极简订阅配置**；右键随机换动画、拖动随身带；本地事件通道让 Antigravity / Claude Code / pi 的生命周期驱动它的动作。
 
-**后端（自动选择，也可用环境变量 `KB_BACKEND=agy|pollinations` 强制）**：
+**订阅用量（v5.0）**
 
-| 后端 | 选择方式 | 特点 |
-| --- | --- | --- |
-| `pollinations` | **默认** | 零注册零 key，实测 1~2 秒；GPT-4o-mini 级模型；问题会经过第三方服务，别问敏感内容 |
-| `agy` | `KB_BACKEND=agy`（需装 CLI 并登录） | 9~11 秒，质量更好 |
+| 供应商 | 配置 | 查询内容 | 接口 |
+| --- | --- | --- | --- |
+| GitHub Copilot（默认） | 用户名 + PAT + 套餐 | Premium 月额度（已用/上限/重置倒计时/模型 Top5） | `api.github.com/users/{u}/settings/billing/premium_request/usage` |
+| 智谱中国 | **只填 API Key**，无需 URL | GLM Coding Plan 5h / 本周 / 本月窗口 + 重置时间 | `open.bigmodel.cn/api/monitor/usage/quota/limit` |
+| 自定义 | URL + Key | 博世 MFC：月/今日费用+tokens+模型 Top5；URL 若是智谱系则同智谱查询 | `aigc.bosch.com.cn/llmservice/api/v1/client/usage` |
 
-技术底座：Tauri v2（透明无边框窗 + 系统级全局快捷键，无需辅助功能授权；macOS 用系统 WKWebView，Windows 用 WebView2）。
+自定义 URL 自适应：裸域名 / 完整接口地址 / 带不带 `https://` 都能识别；识别不了仅保存配置并在面板标注。轮询默认 5 分钟（`KB_USAGE_POLL_SEC` 可调），配置明文存于 `app_data_dir/usage.json`（仅本机）。
+
+## 快捷键与交互
+
+| 操作 | 效果 |
+| --- | --- |
+| 鼠标悬停桌宠（350ms） | 弹出订阅用量面板，移开即隐 |
+| 左键点击桌宠 | 弹出订阅配置面板（点外面/Esc 关闭） |
+| `Option+G` / `Alt+G` | 呼出 / 隐藏配置面板 |
+| 左键拖动 / 右键 | 被拎悬空扑腾 / 随机换一个自娱动作 |
+| 点击用量面板「刷新」 | 立即重新查询所有启用账号 |
 
 ## macOS 启动 / 停止
 
@@ -87,19 +99,6 @@ cd ~/Desktop/Working/2026-09_kapybara-buddy
 
 1. 安装 Rust 工具链（rustup.rs）
 2. 把整个项目文件夹拷到 Windows 机器，在该目录下双击 `start.bat`（首次会自动编译，产物在 `%LOCALAPPDATA%\kapybara-buddy-target`）。之后 `Alt+G` 呼出。
-
-## 快捷键与交互
-
-| 操作 | 效果 |
-| --- | --- |
-| `Option+G` / `Alt+G` | 呼出 / 隐藏，呼出后光标已在输入框 |
-| `Enter` | 发送问题，回答流式显示，**覆盖上一条** |
-| `Esc` | 关闭窗口 |
-| 点窗口外 | 自动隐藏（回答生成中不隐藏，答完停留 4 秒） |
-| 点击左下角蓝点 | 中止当前回答 |
-| 拖动顶部栏 | 移动窗口 |
-
-窗口出现在鼠标当前所在屏幕，居中偏上。每次提问独立会话（无上下文）。
 
 ## 素材与形态
 
@@ -169,17 +168,19 @@ ln -sf ~/Desktop/Working/2026-09_kapybara-buddy/pi-extension/kapybara-bridge.ts 
 
 ```
 app/                     前端（打包进二进制）
-  pet.html               桌宠渲染层（帧动画/多Agent状态机/拖动交互）
-  index.html             问答浮窗 UI
+  pet.html               桌宠渲染层（帧动画/多Agent状态机/拖动交互/悬停触发）
+  config.html            订阅配置面板（左键呼出）
+  usage.html             悬浮用量面板（悬停呼出）
   frames/                PNG 帧素材
 src-tauri/               Rust 主进程（Tauri v2）
   src/main.rs            窗口创建/热键/光标轮询/生命周期
-  src/agent_event.rs     多 Agent 事件通道与会话聚合仲裁引擎（:17898）
+  src/usage.rs           订阅用量：三供应商查询/URL 适配/轮询/面板窗口管理
+  src/agent_event.rs     多 Agent 事件通道与会话聚合仲裁引擎（:17898）+ 事件动画辅助
   src/pievent.rs         兼容旧版引用的向后兼容层
   src/drag.rs            拖动绝对坐标 + 台前调度边界学习
-  src/answer.rs          pollinations + agy 双后端（流式）
   src/bridge.rs          window.buddy 注入 shim
   src/commands.rs        IPC 命令
+  src/state.rs           共享状态（拖动/边界/用量）
 agents/                  Hook 脚本与集成工具
   antigravity/           Antigravity hook 脚本与 hooks.json
   claude/                Claude Code hook 脚本与配置片段
@@ -191,13 +192,11 @@ pi-extension/            pi 扩展
 
 | 环境变量 | 默认 | 说明 |
 | --- | --- | --- |
-| `KB_BACKEND` | `pollinations` | 置 `agy` 切 Antigravity CLI 后端（需装 CLI 并登录，质量更好但 9~11s） |
-| `KB_AGY_MODEL` | `gemini-3.8-flash-low` | agy 思考档位，low 最快；置空用 agy 默认 |
+| `KB_USAGE_POLL_SEC` | `300` | 订阅用量后台轮询间隔（秒，60~86400） |
 | `KB_PET_DEBUG` | 未开 | 开启后桌宠状态每 300ms 上报到 `$TMPDIR/pet-debug.log` |
 | `KB_FAST` | 未开 | 加速所有时间阈值（测试用） |
-| `KB_TEST_ASK` / `KB_TEST_ASK2` | 未开 | 自动化问答测试，跑完自动退出 |
 
-注：v4.0 起移除 `KB_PROXY`（原 proxy-server 开关只作用于 Electron 渲染进程的网络，问答后端请求在主进程本就不走它）与 `KB_DEBUG_SHOT`（Tauri 无等价截图 API）。窗口尺寸/热键等常量在 `src-tauri/src/main.rs` 与 `geom.rs` 顶部。
+注：v5.0 移除 `KB_BACKEND` / `KB_AGY_MODEL` / `KB_TEST_ASK` / `KB_TEST_ASK2`（问答功能已删）。窗口尺寸/热键等常量在 `src-tauri/src/main.rs` 与 `geom.rs` 顶部。
 
 ## 本机构建注意（macOS）
 
@@ -211,15 +210,14 @@ brew install llvm lld
 
 ## 网络
 
-问答请求（pollinations/agy）直连；需要代理时设系统代理即可（reqwest 会读取系统代理配置）。
+用量查询（Copilot/智谱/MFC）与 Agent 事件通道均直连；需要代理时设系统代理即可（reqwest 会读取系统代理配置）。
 
 ## 自动化测试
 
 ```bash
 cd src-tauri
-KB_TEST_ASK="1+1等于几" cargo run              # 自动呼出、提问、打印回答后退出
-KB_TEST_ASK2="那它的学名叫什么" KB_TEST_ASK="1+1等于几" cargo run   # 两问覆盖测试
-KB_PET_DEBUG=1 cargo run                      # 桌宠状态 300ms 上报，tail $TMPDIR/pet-debug.log
+cargo test                                  # URL 适配 / 三供应商解析 / 重置时间单测
+KB_PET_DEBUG=1 cargo run                    # 桌宠状态 300ms 上报，tail $TMPDIR/pet-debug.log
 ```
 
 ## 历史

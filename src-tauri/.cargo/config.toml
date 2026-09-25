@@ -1,15 +1,8 @@
-# 本机链接器配置：系统 CLT 是 2020 年的 Xcode 12（clang 12 / ld64-609），
-# 它产出的 ad-hoc 签名 dylib 会被 macOS 26 内核 AMFI 拒绝（rustc 加载 proc-macro 即被
-# SIGKILL "Code Signature Invalid"）。改用 Homebrew LLVM/LLD 链接，SDK 用 CLT 自带的 11.0。
-[target.aarch64-apple-darwin]
-rustflags = [
-    "-C", "linker=/opt/homebrew/opt/llvm/bin/clang",
-    "-C", "link-arg=-fuse-ld=/opt/homebrew/opt/lld/bin/ld64.lld",
-    "-C", "link-arg=-isysroot",
-    "-C", "link-arg=/Library/Developer/CommandLineTools/SDKs/MacOSX11.0.sdk",
-]
-
-# 编译产物放 ~/Library/Caches：项目在 ~/Desktop 下受 iCloud 文件同步（fileproviderd）管理，
-# 新鲜出炉的 dylib 元数据被同步进程动过会导致 AMFI "Invalid Page" 误杀 rustc（间歇性 SIGKILL）。
+# 本机（hji1szh）链接器：CLT 为新版（Apple clang 21），默认链路即可，
+# 无需原作者机器（Xcode 12 老 clang 被 AMFI 误杀）的 Homebrew LLVM 绕路方案——
+# 那套配置见 git 历史 / README「本机构建注意」。
+#
+# 唯一保留：编译产物放 ~/Library/Caches。项目在 OneDrive 同步目录下，
+# 新鲜出炉的 dylib 元数据被 fileproviderd 动过可能触发 AMFI "Invalid Page" 间歇性 SIGKILL。
 [build]
-target-dir = "/Users/hujia/Library/Caches/kapybara-buddy-target"
+target-dir = "/Users/hji1szh/Library/Caches/kapybara-buddy-target"

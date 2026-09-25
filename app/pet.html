@@ -332,6 +332,18 @@ setInterval(() => {
   }
 }, 500);
 
+/* ---------- 悬停：弹出订阅用量面板（350ms 防抖，避免划过就弹） ---------- */
+let hoverTimer = null;
+document.documentElement.addEventListener('mouseenter', () => {
+  if (down || dragging) return;
+  clearTimeout(hoverTimer);
+  hoverTimer = setTimeout(() => window.buddy.hoverUsage(true), 350);
+});
+document.documentElement.addEventListener('mouseleave', () => {
+  clearTimeout(hoverTimer);
+  window.buddy.hoverUsage(false);
+});
+
 /* ---------- 拖动：被提溜（拖动全程算活动，不会睡着） ---------- */
 let down = null, dragging = false;
 document.addEventListener('mousedown', (e) => {
@@ -340,6 +352,8 @@ document.addEventListener('mousedown', (e) => {
     return;
   }
   if (e.button !== 0) return;                          // 其余只认左键
+  clearTimeout(hoverTimer);
+  window.buddy.hoverUsage(false);                      // 拖动/点击时用量面板让位
   down = { x: e.clientX, y: e.clientY };
   dragging = false;
   lastActivity = Date.now();

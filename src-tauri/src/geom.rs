@@ -10,8 +10,12 @@
 use tauri::{AppHandle, Monitor};
 
 pub const PET_SIZE: f64 = 110.0;
-pub const CHAT_W: f64 = 640.0;
-pub const CHAT_H: f64 = 400.0;
+/// 订阅配置面板（原问答窗尺寸，内容变高一点）
+pub const CONFIG_W: f64 = 640.0;
+pub const CONFIG_H: f64 = 470.0;
+/// 悬浮用量面板
+pub const USAGE_W: f64 = 300.0;
+pub const USAGE_H: f64 = 420.0;
 
 /// 全局光标位置（CSS px，屏幕左上角为原点）
 #[cfg(target_os = "macos")]

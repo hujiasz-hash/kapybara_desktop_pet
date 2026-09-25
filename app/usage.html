@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: transparent;
+               font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+               user-select: none; cursor: default; }
+  body { display: flex; flex-direction: column; padding: 12px 14px 10px;
+         background: rgba(24, 26, 32, 0.92); color: #e8e6e3;
+         border-radius: 14px; border: 1px solid rgba(255,255,255,0.10); }
+  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  h1 { font-size: 13px; font-weight: 700; }
+  #refresh { border: none; background: rgba(255,255,255,0.09); color: #cfd4da; border-radius: 7px;
+             padding: 3px 10px; font-size: 11px; cursor: pointer; }
+  #refresh:hover { background: rgba(255,255,255,0.16); }
+  #list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+  #list::-webkit-scrollbar { width: 0; }
+  .acct { background: rgba(255,255,255,0.055); border-radius: 10px; padding: 8px 10px 9px; }
+  .acct-head { display: flex; align-items: baseline; gap: 6px; margin-bottom: 6px; }
+  .acct-head .name { font-size: 12px; font-weight: 700; }
+  .acct-head .badge { font-size: 9.5px; color: #9aa3ad; background: rgba(255,255,255,0.09);
+                      border-radius: 5px; padding: 1px 5px; }
+  .acct-head .val { margin-left: auto; font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .bar { height: 5px; border-radius: 3px; background: rgba(255,255,255,0.10); overflow: hidden; margin: 4px 0 3px; }
+  .bar > i { display: block; height: 100%; border-radius: 3px; background: #58c273; }
+  .bar > i.warn { background: #e5b45b; }
+  .bar > i.bad { background: #e06c60; }
+  .wrow { display: flex; align-items: center; gap: 6px; margin-top: 3px; }
+  .wrow .wname { width: 30px; flex: none; font-size: 10px; color: #9aa3ad; }
+  .wrow .bar { flex: 1; margin: 0; }
+  .wrow .wpct { width: 34px; flex: none; text-align: right; font-size: 10px; color: #cfd4da; font-variant-numeric: tabular-nums; }
+  .sub { font-size: 10px; color: #8a8f98; margin-top: 2px; }
+  .models { margin-top: 4px; }
+  .models .m { display: flex; justify-content: space-between; font-size: 10px; color: #aeb4bd;
+               padding: 1px 0; font-variant-numeric: tabular-nums; }
+  .err { font-size: 11px; color: #e06c60; line-height: 1.45; }
+  .warn2 { font-size: 11px; color: #e5b45b; line-height: 1.45; }
+  .pending { font-size: 11px; color: #6b7078; }
+  footer { font-size: 10px; color: #6b7078; margin-top: 8px; display: flex; justify-content: space-between; }
+  .off { font-size: 11px; color: #6b7078; line-height: 1.5; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>📊 订阅用量</h1>
+    <button id="refresh">刷新</button>
+  </header>
+  <div id="list"></div>
+  <footer>
+    <span>左键点桌宠配置账号</span>
+    <span id="fetched-at"></span>
+  </footer>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const NAMES = { copilot: 'GitHub Copilot', zhipu: '智谱中国', custom: '自定义' };
+
+function fmtTokens(n) {
+  n = n || 0;
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
+  return String(Math.round(n));
+}
+function fmtCountdown(ms) {
+  if (!ms) return '';
+  const s = Math.max(0, Math.floor((ms - Date.now()) / 1000));
+  if (s < 3600) return Math.max(1, Math.floor(s / 60)) + '分钟后重置';
+  const h = Math.floor(s / 3600);
+  if (h < 48) return Math.floor(h) + '小时' + Math.floor((s % 3600) / 60) + '分后重置';
+  return Math.floor(h / 24) + '天后重置';
+}
+function barCls(pct) { return pct >= 90 ? 'bad' : pct >= 70 ? 'warn' : ''; }
+function esc(s) { const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+
+const WNAMES = { '5h': '5h', week: '周', month: '月', mcp: 'MCP' };
+
+function acctCard(key, usage, cfg) {
+  const enabled = cfg && cfg.enabled;
+  const head = (name, badge, val) =>
+    `<div class="acct-head"><span class="name">${name}</span>` +
+    (badge ? `<span class="badge">${esc(badge)}</span>` : '') +
+    (val ? `<span class="val">${val}</span>` : '') + `</div>`;
+
+  if (!enabled) {
+    return `<div class="acct">${head(NAMES[key])}<div class="off">未启用 · 左键点桌宠配置</div></div>`;
+  }
+  if (!usage || usage.kind === 'pending') {
+    return `<div class="acct">${head(NAMES[key])}<div class="pending">查询中…</div></div>`;
+  }
+  if (usage.kind === 'error') {
+    return `<div class="acct">${head(NAMES[key])}<div class="err">✗ ${esc(usage.message)}</div></div>`;
+  }
+  if (usage.kind === 'unsupported') {
+    return `<div class="acct">${head(NAMES[key])}<div class="warn2">⚠ ${esc(usage.message)}</div></div>`;
+  }
+  if (usage.kind === 'copilot') {
+    const pct = usage.limit > 0 ? Math.min(100, (usage.used / usage.limit) * 100) : 0;
+    const models = (usage.models || []).slice(0, 5).map((m) =>
+      `<div class="m"><span>${esc(m.model)}</span><span>${fmtTokens(m.value)}</span></div>`).join('');
+    return `<div class="acct">` +
+      head('GitHub Copilot', usage.tier.toUpperCase(), `${Math.round(usage.used)}/${Math.round(usage.limit)}`) +
+      `<div class="bar"><i class="${barCls(pct)}" style="width:${pct}%"></i></div>` +
+      (usage.period ? `<div class="sub">账期 ${esc(usage.period)} · ${fmtCountdown(usage.reset_at_ms)}</div>` : '') +
+      (models ? `<div class="models">${models}</div>` : '') +
+      `</div>`;
+  }
+  if (usage.kind === 'zhipu') {
+    const rows = (usage.windows || []).map((w) =>
+      `<div class="wrow"><span class="wname">${WNAMES[w.kind] || w.kind}</span>` +
+      `<div class="bar"><i class="${barCls(w.pct)}" style="width:${w.pct}%"></i></div>` +
+      `<span class="wpct">${Math.round(w.pct)}%</span></div>` +
+      (w.reset_at_ms ? `<div class="sub" style="margin-left:36px">${fmtCountdown(w.reset_at_ms)}</div>` : ''));
+    return `<div class="acct">` +
+      head('智谱中国', usage.level ? 'GLM ' + usage.level : 'GLM', (usage.windows || []).length ? Math.round(Math.max(0, ...usage.windows.map(w => w.pct))) + '%' : '') +
+      (rows.join('') || '<div class="pending">无窗口数据</div>') +
+      `</div>`;
+  }
+  if (usage.kind === 'mfc') {
+    const m = usage.month || { cost: 0, total_tokens: 0, models: [] };
+    const models = (m.models || []).map((x) =>
+      `<div class="m"><span>${esc(x.model)}</span><span>${x.value.toFixed(2)}</span></div>`).join('');
+    return `<div class="acct">` +
+      head('博世 MFC', '月度', m.cost.toFixed(2)) +
+      `<div class="sub">本月 ${m.cost.toFixed(2)} · ${fmtTokens(m.total_tokens)} tokens` +
+      (usage.today ? ` · 今日 ${usage.today.cost.toFixed(2)}（${fmtTokens(usage.today.total_tokens)}）` : '') +
+      `</div>` +
+      (models ? `<div class="models">${models}</div>` : '') +
+      `</div>`;
+  }
+  return '';
+}
+
+function apply(payload) {
+  if (!payload) return;
+  const cfg = payload.config || {};
+  const us = payload.usages || {};
+  let html = '';
+  html += acctCard('copilot', us.copilot, cfg.copilot);
+  html += acctCard('zhipu', us.zhipu, cfg.zhipu);
+  html += acctCard('custom', us.custom, cfg.custom);
+  $('list').innerHTML = html;
+  const fa = payload.fetchedAt;
+  $('fetched-at').textContent = fa ? new Date(fa).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) + ' 更新' : '';
+}
+
+$('refresh').addEventListener('click', () => window.buddy.refresh());
+document.addEventListener('mouseenter', () => window.buddy.panelHover(true));
+document.addEventListener('mouseleave', () => window.buddy.panelHover(false));
+
+window.buddy.onUsageUpdate(apply);
+window.buddy.getState().then(apply).catch(() => {});
+</script>
+</body>
+</html>

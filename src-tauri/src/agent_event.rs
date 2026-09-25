@@ -17,11 +17,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-
-use crate::answer;
 
 pub const EVENT_PORT: u16 = 17898;
 #[allow(dead_code)]
@@ -393,7 +391,31 @@ fn on_agent_event(
         fallback
     );
 
-    answer::pet_event_full(app, anim, None, fallback, active_count);
+    pet_event_full(app, anim, None, fallback, active_count);
+}
+
+/// 给桌宠渲染层发一个事件动画（原 answer.rs 的辅助函数，v5.0 迁入）
+pub fn pet_event(app: &AppHandle, ev: &str, ms: Option<u64>) {
+    pet_event_full(app, ev, ms, None, 0);
+}
+
+pub fn pet_event_full(
+    app: &AppHandle,
+    ev: &str,
+    ms: Option<u64>,
+    fallback: Option<&str>,
+    active_count: usize,
+) {
+    let _ = app.emit_to(
+        "pet",
+        "pet-event",
+        serde_json::json!({
+            "e": ev,
+            "ms": ms,
+            "fallback": fallback,
+            "activeCount": active_count,
+        }),
+    );
 }
 
 fn truncate_id(id: &str) -> &str {

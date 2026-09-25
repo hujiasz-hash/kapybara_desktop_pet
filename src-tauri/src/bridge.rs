@@ -1,10 +1,10 @@
-//! 注入到两个 WebView 的桥接脚本
+//! 注入到各 WebView 的桥接脚本
 //!
-//! 目标：pet.html / index.html 里原有的 `window.buddy.*` 接口**一行不改**，
-//! 由这里的 shim 用 Tauri 的 invoke/listen 实现（对应 Electron 的 preload.js）。
+//! v5.0：pet（桌宠 + 悬停触发用量面板）/ config（订阅配置）/ usage（悬浮用量面板）
+//! 原问答桥接（ask/answer-chunk 等）随问答功能一并移除。
 
-/// 两个窗口共用的 window.buddy shim（对应 preload.js 的 contextBridge 暴露面）
-const SHIM: &str = r#"(function () {
+/// 桌宠窗口的 window.buddy shim（pet.html 依赖面）
+const PET_SHIM: &str = r#"(function () {
   function whenTauri(cb) {
     if (window.__TAURI__) return cb(window.__TAURI__);
     var t = setInterval(function () {
@@ -20,18 +20,39 @@ const SHIM: &str = r#"(function () {
     });
   }
   window.buddy = {
-    ask: function (q) { return invokeLater('ask', { q: q }); },
-    hide: function () { invokeLater('hide_chat', {}); },
-    stop: function () { return invokeLater('stop_answer', {}); },
     petDragStart: function (sx, sy) { invokeLater('pet_drag_start', { sx: sx, sy: sy }); },
     petDragMove: function (sx, sy) { invokeLater('pet_drag_move', { sx: sx, sy: sy }); },
     petDragEnd: function () { invokeLater('pet_drag_end', {}); },
     petClick: function () { invokeLater('pet_click', {}); },
-    onFocusInput: function (cb) { listenEv('focus-input', cb); },
-    onAnswerChunk: function (cb) { listenEv('answer-chunk', function (t) { cb(t); }); },
-    onAnswerDone: function (cb) { listenEv('answer-done', function () { cb(); }); },
+    hoverUsage: function (show) { invokeLater('usage_hover', { show: !!show }); },
     onCursor: function (cb) { listenEv('cursor', cb); },
     onPetEvent: function (cb) { listenEv('pet-event', function (p) { cb(p.e, p.ms, p.fallback, p.activeCount); }); },
+  };
+})();"#;
+
+/// 用量类窗口（config / usage）共用的 shim
+const PANEL_SHIM: &str = r#"(function () {
+  function whenTauri(cb) {
+    if (window.__TAURI__) return cb(window.__TAURI__);
+    var t = setInterval(function () {
+      if (window.__TAURI__) { clearInterval(t); cb(window.__TAURI__); }
+    }, 5);
+  }
+  function listenEv(name, cb) {
+    whenTauri(function (t) { t.event.listen(name, function (e) { cb(e.payload); }); });
+  }
+  function invokeLater(name, args) {
+    return new Promise(function (resolve, reject) {
+      whenTauri(function (t) { t.core.invoke(name, args).then(resolve, reject); });
+    });
+  }
+  window.buddy = {
+    getState: function () { return invokeLater('usage_state', {}); },
+    save: function (config) { return invokeLater('usage_save', { config: config }); },
+    refresh: function () { invokeLater('usage_refresh', {}); },
+    hide: function () { invokeLater('hide_config', {}); },
+    panelHover: function (hovered) { invokeLater('usage_panel_hover', { hovered: !!hovered }); },
+    onUsageUpdate: function (cb) { listenEv('usage-update', cb); },
   };
 })();"#;
 
@@ -75,7 +96,7 @@ const PET_EVENT_TRACE: &str = r#"(function () {
 
 fn pet_init_js() -> String {
     let mut js = String::new();
-    js.push_str(SHIM);
+    js.push_str(PET_SHIM);
     js.push_str(PET_CONSOLE);
     // 探针：确认 shim 在 pet 窗口生效（正常路径 pet.html 无 console 输出，无法从日志判断）
     js.push_str("(function(){ function p(){ if(window.__TAURI__){ window.__TAURI__.core.invoke('pet_log',{level:'info',message:'[pet] shim-ready kbFast='+!!window.__KB_FAST}).catch(function(){}); } else { setTimeout(p,50); } } p(); })();");
@@ -89,14 +110,10 @@ fn pet_init_js() -> String {
     js
 }
 
-fn chat_init_js() -> String {
-    SHIM.to_string()
-}
-
 pub fn build_pet() -> String {
     pet_init_js()
 }
 
-pub fn build_chat() -> String {
-    chat_init_js()
+pub fn build_panel() -> String {
+    PANEL_SHIM.to_string()
 }

@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: transparent;
+               font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+               user-select: none; cursor: default; }
+  body { display: flex; flex-direction: column; padding: 14px 16px 12px;
+         background: rgba(24, 26, 32, 0.92); color: #e8e6e3;
+         border-radius: 16px; border: 1px solid rgba(255,255,255,0.10); }
+  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  h1 { font-size: 15px; font-weight: 700; letter-spacing: 0.5px; }
+  h1 .logo { margin-right: 4px; }
+  .hint { font-size: 10.5px; color: #8a8f98; margin-top: 2px; }
+  #save { border: none; border-radius: 8px; padding: 6px 16px; font-size: 12.5px; font-weight: 600;
+          background: #4f8ef7; color: #fff; cursor: pointer; }
+  #save:hover { background: #6aa0f8; }
+  #save:disabled { opacity: 0.5; cursor: default; }
+  #cards { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 2px; }
+  #cards::-webkit-scrollbar { width: 0; }
+  .card { background: rgba(255,255,255,0.055); border: 1px solid rgba(255,255,255,0.08);
+          border-radius: 12px; padding: 10px 12px 11px; }
+  .card.off .body { opacity: 0.45; }
+  .card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .card-head .name { font-size: 13px; font-weight: 700; }
+  .card-head .sub { font-size: 10.5px; color: #8a8f98; }
+  .toggle { margin-left: auto; position: relative; width: 34px; height: 19px; }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .toggle i { position: absolute; inset: 0; border-radius: 10px; background: #3a3d45; transition: 0.15s; cursor: pointer; }
+  .toggle i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 15px; height: 15px;
+                     border-radius: 50%; background: #cfcfcf; transition: 0.15s; }
+  .toggle input:checked + i { background: #3fa653; }
+  .toggle input:checked + i::after { left: 17px; background: #fff; }
+  .row { display: flex; gap: 8px; align-items: center; margin-top: 7px; }
+  .row label { font-size: 11.5px; color: #aeb4bd; width: 52px; flex: none; text-align: right; }
+  .row input, .row select { flex: 1; min-width: 0; background: rgba(0,0,0,0.35); color: #e8e6e3;
+          border: 1px solid rgba(255,255,255,0.12); border-radius: 7px; padding: 5px 8px; font-size: 12px; outline: none; }
+  .row input:focus, .row select:focus { border-color: #4f8ef7; }
+  .row input::placeholder { color: #5b6069; }
+  .status { font-size: 11px; margin-top: 7px; margin-left: 60px; color: #8a8f98; min-height: 14px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .status.ok { color: #58c273; }
+  .status.err { color: #e06c60; }
+  .tip { font-size: 10.5px; color: #6b7078; margin: 5px 0 0 60px; }
+  .tip b { color: #9aa3ad; font-weight: 600; }
+  footer { display: flex; justify-content: space-between; align-items: center; margin-top: 8px;
+           font-size: 10.5px; color: #6b7078; }
+</style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1><span class="logo">🦫</span>订阅用量配置</h1>
+      <div class="hint">鼠标悬停桌宠查看用量 · 左键点桌宠打开本面板 · Esc 关闭</div>
+    </div>
+    <button id="save">保存</button>
+  </header>
+
+  <div id="cards">
+    <!-- GitHub Copilot（默认） -->
+    <section class="card" id="card-copilot">
+      <div class="card-head">
+        <span class="name">GitHub Copilot</span><span class="sub">默认 · Premium 请求月额度</span>
+        <label class="toggle"><input type="checkbox" id="copilot-enabled"><i></i></label>
+      </div>
+      <div class="body">
+        <div class="row">
+          <label>用户名</label>
+          <input id="copilot-username" placeholder="GitHub 用户名">
+          <label>套餐</label>
+          <select id="copilot-tier" style="flex:0 0 110px">
+            <option value="free">Free (50)</option>
+            <option value="pro">Pro (300)</option>
+            <option value="pro+">Pro+ (1500)</option>
+            <option value="business">Business (300)</option>
+            <option value="enterprise">Enterprise (1000)</option>
+          </select>
+        </div>
+        <div class="row">
+          <label>PAT</label>
+          <input id="copilot-pat" type="password" placeholder="GitHub PAT（github.com → Settings → Developer settings）">
+        </div>
+        <div class="tip">额度上限优先取接口返回值，取不到时按所选套餐兜底；重置时间为<b>每月 1 日 UTC</b>。</div>
+        <div class="status" id="copilot-status"></div>
+      </div>
+    </section>
+
+    <!-- 智谱中国 -->
+    <section class="card" id="card-zhipu">
+      <div class="card-head">
+        <span class="name">智谱中国</span><span class="sub">GLM Coding Plan · 只填 Key，无需 URL</span>
+        <label class="toggle"><input type="checkbox" id="zhipu-enabled"><i></i></label>
+      </div>
+      <div class="body">
+        <div class="row">
+          <label>API Key</label>
+          <input id="zhipu-key" type="password" placeholder="open.bigmodel.cn → API Keys">
+        </div>
+        <div class="tip">自动查询 <b>open.bigmodel.cn</b> 的 5 小时 / 本周 / 本月 用量窗口。</div>
+        <div class="status" id="zhipu-status"></div>
+      </div>
+    </section>
+
+    <!-- 自定义（博世 MFC 等） -->
+    <section class="card" id="card-custom">
+      <div class="card-head">
+        <span class="name">自定义</span><span class="sub">博世 MFC / 智谱系地址均可识别</span>
+        <label class="toggle"><input type="checkbox" id="custom-enabled"><i></i></label>
+      </div>
+      <div class="body">
+        <div class="row">
+          <label>URL</label>
+          <input id="custom-url" placeholder="https://aigc.bosch.com.cn">
+        </div>
+        <div class="row">
+          <label>Key</label>
+          <input id="custom-key" type="password" placeholder="MFC API Key">
+        </div>
+        <div class="tip">URL 适配：裸域名、完整接口地址、带不带 https:// 都行。<br>
+          已支持：<b>aigc.bosch.com.cn</b>（博世 MFC）· <b>bigmodel.cn</b> / <b>api.z.ai</b>（智谱）</div>
+        <div class="status" id="custom-status"></div>
+      </div>
+    </section>
+  </div>
+
+  <footer>
+    <span id="save-msg"></span>
+    <span id="fetched-at"></span>
+  </footer>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const fields = {
+  copilot: { enabled: $('copilot-enabled'), username: $('copilot-username'), tier: $('copilot-tier'), pat: $('copilot-pat') },
+  zhipu:   { enabled: $('zhipu-enabled'), key: $('zhipu-key') },
+  custom:  { enabled: $('custom-enabled'), url: $('custom-url'), key: $('custom-key') },
+};
+
+/* ---------- URL 适配预览（与 Rust 端 detect_custom 同规则） ---------- */
+function detectKind(raw) {
+  let s = (raw || '').trim();
+  if (!s) return null;
+  if (!/^https?:\/\//i.test(s)) s = 'https://' + s;
+  let host = '';
+  try { host = new URL(s).hostname.toLowerCase(); } catch (_) { return null; }
+  if (host.includes('bosch.com.cn')) return '博世 MFC ✓';
+  if (host.includes('bigmodel.cn')) return '智谱 GLM ✓';
+  if (host.endsWith('z.ai')) return '智谱国际 GLM ✓';
+  return '未识别（仅保存，不查询用量）';
+}
+
+function renderDetect() {
+  const tip = fields.custom.url;
+  const el = $('card-custom').querySelector('.tip');
+  const k = detectKind(tip.value);
+  el.innerHTML = 'URL 适配：裸域名、完整接口地址、带不带 https:// 都行。<br>' +
+    '已支持：<b>aigc.bosch.com.cn</b>（博世 MFC）· <b>bigmodel.cn</b> / <b>api.z.ai</b>（智谱）<br>' +
+    (tip.value.trim() ? '识别：<b>' + k + '</b>' : '识别：—');
+}
+fields.custom.url.addEventListener('input', renderDetect);
+
+/* ---------- 状态行渲染 ---------- */
+function fmtUsageLine(kind, u) {
+  if (!u) return '尚未查询';
+  if (u.kind === 'error') return '✗ ' + (u.message || '查询失败');
+  if (u.kind === 'unsupported') return '⚠ ' + (u.message || '暂不支持');
+  if (u.kind === 'copilot') return '✓ Premium ' + u.used + '/' + u.limit + (u.period ? '（账期 ' + u.period + '）' : '');
+  if (u.kind === 'zhipu') {
+    const names = { '5h': '5h', week: '周', month: '月', mcp: 'MCP' };
+    const parts = (u.windows || []).map((w) => names[w.kind] + ' ' + Math.round(w.pct) + '%');
+    return '✓ ' + (parts.length ? parts.join(' · ') : '无窗口数据') + (u.level ? '（' + u.level + '）' : '');
+  }
+  if (u.kind === 'mfc') {
+    const t = '本月 ' + u.month.cost.toFixed(2) + ' · ' + fmtTokens(u.month.total_tokens);
+    const d = u.today ? ' · 今日 ' + u.today.cost.toFixed(2) : '';
+    return '✓ ' + t + d;
+  }
+  return '…';
+}
+function fmtTokens(n) {
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M tok';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k tok';
+  return Math.round(n) + ' tok';
+}
+function renderStatus(key, usage) {
+  const el = $(key + '-status');
+  const line = fmtUsageLine(key, usage);
+  el.textContent = line;
+  el.className = 'status' + (!usage ? '' : line.startsWith('✓') ? ' ok' : line.startsWith('⚠') ? '' : ' err');
+}
+
+/* ---------- 配置装载 / 保存 ---------- */
+function fillForm(cfg) {
+  fields.copilot.enabled.checked = !!cfg.copilot.enabled;
+  fields.copilot.username.value = cfg.copilot.username || '';
+  fields.copilot.tier.value = cfg.copilot.tier || 'pro';
+  fields.copilot.pat.value = cfg.copilot.pat || '';
+  fields.zhipu.enabled.checked = !!cfg.zhipu.enabled;
+  fields.zhipu.key.value = cfg.zhipu.key || '';
+  fields.custom.enabled.checked = !!cfg.custom.enabled;
+  fields.custom.url.value = cfg.custom.url || '';
+  fields.custom.key.value = cfg.custom.key || '';
+  for (const k of ['copilot', 'zhipu', 'custom']) {
+    $(`card-${k}`).classList.toggle('off', !fields[k].enabled.checked);
+  }
+  renderDetect();
+}
+for (const k of ['copilot', 'zhipu', 'custom']) {
+  fields[k].enabled.addEventListener('change', () => $(`card-${k}`).classList.toggle('off', !fields[k].enabled.checked));
+}
+
+function collect() {
+  return {
+    copilot: {
+      enabled: fields.copilot.enabled.checked,
+      username: fields.copilot.username.value.trim(),
+      tier: fields.copilot.tier.value,
+      pat: fields.copilot.pat.value.trim(),
+    },
+    zhipu: { enabled: fields.zhipu.enabled.checked, key: fields.zhipu.key.value.trim() },
+    custom: {
+      enabled: fields.custom.enabled.checked,
+      url: fields.custom.url.value.trim(),
+      key: fields.custom.key.value.trim(),
+      label: '',
+    },
+  };
+}
+
+$('save').addEventListener('click', async () => {
+  $('save').disabled = true;
+  $('save-msg').textContent = '已保存，正在刷新…';
+  try { await window.buddy.save(collect()); } catch (_) { $('save-msg').textContent = '保存失败'; }
+  setTimeout(() => { $('save').disabled = false; }, 400);
+});
+
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.buddy.hide(); });
+
+/* ---------- 初始化 + 用量事件更新 ---------- */
+function apply(payload, fillConfig) {
+  if (!payload) return;
+  if (payload.config && fillConfig) fillForm(payload.config);   // 只在首次装载填表，避免轮询事件覆盖编辑中的内容
+  const us = payload.usages || {};
+  renderStatus('copilot', us.copilot);
+  renderStatus('zhipu', us.zhipu);
+  renderStatus('custom', us.custom);
+  const fa = payload.fetchedAt;
+  $('fetched-at').textContent = fa ? '上次更新 ' + new Date(fa).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '';
+  if ($('save-msg').textContent.startsWith('已保存')) $('save-msg').textContent = '已保存 ✓';
+}
+window.buddy.onUsageUpdate((p) => apply(p, false));
+window.buddy.getState().then((p) => apply(p, true)).catch(() => {});
+</script>
+</body>
+</html>

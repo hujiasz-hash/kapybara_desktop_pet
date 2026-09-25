@@ -1,20 +1,21 @@
-//! Capybara Buddy v4.0 — Tauri v2 实现（去 Electron）
+//! Capybara Buddy v5.0 — Tauri v2 实现
 //!
-//! - 桌面常驻卡皮巴拉（不占焦点、置顶、可拖动），点击它弹出问答窗
-//! - Option+G (mac) / Alt+G (Win) 呼出/隐藏问答窗
-//! - 后端：pollinations（默认，零 key 免费网关）/ agy（KB_BACKEND=agy，流式）
-//! - pi 扩展事件通道：127.0.0.1:17898（见 pievent.rs）
+//! - 桌面常驻卡皮巴拉（不占焦点、置顶、可拖动）
+//! - 鼠标悬停桌宠 → 弹出订阅用量面板（Copilot / 智谱 / 自定义）
+//! - 左键点击桌宠 → 弹出订阅配置面板（极简：智谱只填 Key；自定义 URL+Key）
+//! - Option+G (mac) / Alt+G (Win) 呼出/隐藏配置面板
+//! - pi / Antigravity / Claude Code 事件通道：127.0.0.1:17898（见 agent_event.rs）
+//! - v4.x 的问答窗（pollinations/agy）已移除，见 git 历史
 
 mod agent_event;
-mod answer;
 mod bridge;
 mod commands;
 mod drag;
 mod geom;
 mod pievent;
 mod state;
+mod usage;
 
-use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
@@ -26,21 +27,24 @@ const HOTKEY_LABEL: &str = "Option+G (mac) / Alt+G (Win)";
 
 fn main() {
     tauri::Builder::default()
-        // 单实例：重复启动 → 主实例呼出问答窗（对应 requestSingleInstanceLock + second-instance）
+        // 单实例：重复启动 → 主实例呼出配置面板（对应 requestSingleInstanceLock + second-instance）
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            toggle_chat(app);
+            toggle_config(app);
         }))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
-            commands::ask,
-            commands::hide_chat,
-            commands::stop_answer,
             commands::pet_drag_start,
             commands::pet_drag_move,
             commands::pet_drag_end,
             commands::pet_click,
             commands::pet_log,
+            commands::usage_state,
+            commands::usage_save,
+            commands::usage_refresh,
+            commands::usage_hover,
+            commands::usage_panel_hover,
+            commands::hide_config,
         ])
         .setup(|app| {
             // 不进 Dock（对应 app.dock.hide()）
@@ -53,7 +57,7 @@ fn main() {
             create_windows(app)?;
             start_cursor_loop(handle.clone());
             agent_event::start(handle.clone());
-            println!("[kapybara-buddy] 后端: {}", answer::backend_desc());
+            usage::start(handle.clone());
 
             // 全局快捷键（系统级，无需辅助功能授权）
             {
@@ -62,7 +66,7 @@ fn main() {
                     .global_shortcut()
                     .on_shortcut("alt+g", move |_app, _shortcut, event| {
                         if event.state == ShortcutState::Pressed {
-                            toggle_chat(&h2);
+                            toggle_config(&h2);
                         }
                     });
                 if let Err(e) = registered {
@@ -72,25 +76,18 @@ fn main() {
                     );
                 }
             }
-
-            // 自动化测试：KB_TEST_ASK="问题"（KB_TEST_ASK2 第二问验证覆盖）
-            test_flow(handle);
             Ok(())
         })
         .on_window_event(|window, event| match event {
-            // 关闭一律转为隐藏（常驻后台，对应 window-all-closed no-op + chat closed 重建语义）
+            // 关闭一律转为隐藏（常驻后台）
             tauri::WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
                 let _ = window.hide();
             }
-            // 问答窗失焦自动隐藏（回答生成中除外）
+            // 配置面板失焦自动隐藏（点击面板外即收起）
             tauri::WindowEvent::Focused(false) => {
-                if window.label() == "chat" {
-                    let app = window.app_handle();
-                    let busy = app.state::<AppState>().busy.load(Ordering::SeqCst);
-                    if !busy && window.is_visible().unwrap_or(false) {
-                        let _ = window.hide();
-                    }
+                if window.label() == "config" && window.is_visible().unwrap_or(false) {
+                    let _ = window.hide();
                 }
             }
             // 拖动中的系统弹回识别与边界学习
@@ -144,11 +141,11 @@ fn create_windows(app: &tauri::App) -> tauri::Result<()> {
         wa.position.y
     );
 
-    // ---- 问答窗（预加载，呼出即达） ----
-    let chat = WebviewWindowBuilder::new(app, "chat", WebviewUrl::App("index.html".into()))
-        .title("kapybara-chat")
+    // ---- 订阅配置面板（预加载，左键点击/热键呼出即达） ----
+    let config = WebviewWindowBuilder::new(app, "config", WebviewUrl::App("config.html".into()))
+        .title("kapybara-config")
         .position(100.0, 100.0)
-        .inner_size(geom::CHAT_W, geom::CHAT_H)
+        .inner_size(geom::CONFIG_W, geom::CONFIG_H)
         .decorations(false)
         .transparent(true)
         .shadow(false)
@@ -158,22 +155,44 @@ fn create_windows(app: &tauri::App) -> tauri::Result<()> {
         .skip_taskbar(true)
         .always_on_top(true)
         .visible(false)
-        .initialization_script(bridge::build_chat())
+        .initialization_script(bridge::build_panel())
         .build()?;
-    chat.set_visible_on_all_workspaces(true)?;
+    config.set_visible_on_all_workspaces(true)?;
+
+    // ---- 悬浮用量面板（悬停桌宠弹出，不抢焦点） ----
+    let usage_panel = WebviewWindowBuilder::new(app, "usage", WebviewUrl::App("usage.html".into()))
+        .title("kapybara-usage")
+        .position(100.0, 100.0)
+        .inner_size(geom::USAGE_W, geom::USAGE_H)
+        .decorations(false)
+        .transparent(true)
+        .shadow(false)
+        .resizable(false)
+        .maximizable(false)
+        .minimizable(false)
+        .skip_taskbar(true)
+        .always_on_top(true)
+        .focusable(false) // 纯展示 + 刷新按钮，不抢焦点
+        .accept_first_mouse(true)
+        .visible(false)
+        .initialization_script(bridge::build_panel())
+        .build()?;
+    usage_panel.set_visible_on_all_workspaces(true)?;
 
     prelearn(app.handle().clone(), expected_x_phys);
     Ok(())
 }
 
-/// 呼出/隐藏问答窗：贴着宠物左侧弹出，左边放不下放右侧（对应 toggleChat）
-pub fn toggle_chat(app: &AppHandle) {
-    let Some(chat) = app.get_webview_window("chat") else { return };
+/// 呼出/隐藏订阅配置面板：贴着宠物弹出，左边放不下放右侧（原 toggle_chat 语义）
+pub fn toggle_config(app: &AppHandle) {
+    let Some(config) = app.get_webview_window("config") else { return };
     let Some(pet) = app.get_webview_window("pet") else { return };
-    if chat.is_visible().unwrap_or(false) {
-        let _ = chat.hide();
+    if config.is_visible().unwrap_or(false) {
+        let _ = config.hide();
         return;
     }
+    usage::hide_now(app); // 用量面板让位
+
     let Ok(pos) = pet.outer_position() else { return };
     let ps = geom::scale_at_phys(app, pos.x, pos.y);
     let px = pos.x as f64 / ps;
@@ -187,16 +206,16 @@ pub fn toggle_chat(app: &AppHandle) {
     let wa = geom::work_area_css(&mon);
     let ms = mon.scale_factor();
 
-    let mut x = px - geom::CHAT_W - 6.0; // 默认宠物左侧
+    let mut x = px - geom::CONFIG_W - 6.0; // 默认宠物左侧
     if x < wa.x + 4.0 {
         x = px + geom::PET_SIZE + 6.0; // 左边放不下放右侧
     }
     let y = (wa.y + 4.0).max(py - 60.0);
-    let _ = chat.set_position(geom::to_phys(x, y, ms));
-    let _ = chat.show();
-    let _ = chat.set_focus();
-    let _ = app.emit_to("chat", "focus-input", ());
-    answer::pet_event(app, "heart", None); // 打开问答，捧爱心迎接
+    let _ = config.set_position(geom::to_phys(x, y, ms));
+    let _ = config.show();
+    let _ = config.set_focus();
+    // 显示瞬间推一次最新快照，免得等下一轮轮询
+    let _ = app.emit("usage-update", usage::state_json(app));
 }
 
 /// 光标轮询：宠物朝向跟随（120ms）+ 拖动泄漏兜底（对应主进程 setInterval）
@@ -228,7 +247,7 @@ fn start_cursor_loop(app: AppHandle) {
                 let outside = mx < px - 50.0 || mx > px + 160.0 || my < py - 50.0 || my > py + 160.0;
                 if outside {
                     *st.drag.lock().unwrap() = None;
-                    answer::pet_event(&app, "drag-lost", None);
+                    agent_event::pet_event(&app, "drag-lost", None);
                 }
             }
         }
@@ -248,53 +267,4 @@ fn prelearn(app: AppHandle, expected_x_phys: i32) {
             }
         }
     });
-}
-
-/// 自动化测试：KB_TEST_ASK 提交一问（KB_TEST_ASK2 第二问验证覆盖），回答完成后打印并退出
-fn test_flow(app: AppHandle) {
-    let Ok(q1) = std::env::var("KB_TEST_ASK") else { return };
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(2500)).await;
-        toggle_chat(&app);
-        tokio::time::sleep(Duration::from_millis(800)).await;
-        eval_submit(&app, &q1);
-        let q2 = std::env::var("KB_TEST_ASK2").ok();
-        let mut target = 1u32;
-        if let Some(q2) = q2 {
-            for _ in 0..60 {
-                if state::test_done_count(&app) >= 1 {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(1000)).await;
-            }
-            tokio::time::sleep(Duration::from_millis(500)).await;
-            eval_submit(&app, &q2);
-            target = 2;
-        }
-        for _ in 0..120 {
-            if state::test_done_count(&app) >= target {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(1000)).await;
-        }
-        tokio::time::sleep(Duration::from_millis(500)).await;
-        let text = app.state::<AppState>().test_buf.lock().unwrap().clone();
-        let tail: String = {
-            let chars: Vec<char> = text.chars().collect();
-            let start = chars.len().saturating_sub(1200);
-            chars[start..].iter().collect()
-        };
-        println!("---- 回答 ----\n{}", tail);
-        app.exit(0);
-    });
-}
-
-fn eval_submit(app: &AppHandle, q: &str) {
-    if let Some(chat) = app.get_webview_window("chat") {
-        let js = format!(
-            "document.getElementById('q').value = {}; submit(); true;",
-            serde_json::to_string(q).unwrap_or_else(|_| "''".into())
-        );
-        let _ = chat.eval(js);
-    }
 }
