@@ -55,6 +55,10 @@ date: 2026-09-21
 | v4.0 | 2026-09-21 | 胡嘉 | 去 Electron 重构：Tauri v2 + 系统 WebView（WKWebView/WebView2），装包从 289MB node_modules 变 13MB 单二进制；前端 HTML/PNG 帧零改动（window.buddy 桥接层用注入 shim 等价替换）；pi 事件通道/热键/拖动边界学习/双后端问答全部保留；移除 KB_PROXY（原只影响渲染进程）与 KB_DEBUG_SHOT（无对应截图 API）；详见 src-tauri/ |---
 | v4.1 | 2026-09-21 | 胡嘉 | 支持 Antigravity 与 Claude Code 官方生命周期 Hook；重构事件通道为多 Agent 会话聚合引擎（解决并发冲突、早退误睡与僵尸会话自愈）；提供 agents/ 一键安装脚本 |
 | v5.0 | 2026-09-25 | 胡嘉 | 去问答，转订阅用量面板：①左键点桌宠改弹订阅配置（Copilot 默认 / 智谱中国只填 Key / 自定义 URL+Key，URL 自适应识别博世 MFC、bigmodel.cn、api.z.ai）②鼠标悬停桌宠弹用量面板（Premium 月额度、智谱 5h/周/月 窗口、MFC 月/今日费用+tokens，带重置倒计时与模型 Top5）③删除问答链路（answer.rs / index.html / KB_TEST_ASK），Option+G 改呼出配置面板；用量后台 5min 轮询（KB_USAGE_POLL_SEC 可调）配置存 app_data_dir/usage.json |
+| v5.1 | 2026-09-25 | 胡嘉 | 修「鼠标放在桌宠上没有悬浮显示用量」：悬停触发从渲染层 DOM 事件搬到主进程——桌宠窗是 `focusable(false)`（设计上不许抢焦点），非 key 窗口的 WebView 命中测试不可靠：光标已经在宠物身上时窗口才出现、或窗口拿不到 key，就收不到 `mouseenter`；而 `mouseleave` 同样不来，enter/leave 配不上对即永久哑火（实测日志只有 1 次 hover-enter、0 次 show=true）。改由主进程按**全局光标**判定（那 120ms 轮询本来就为转头而跑）：「桌宠矩形 ∪ 面板矩形」进圈 350ms 弹出、出圈交给面板的 600ms 宽限（光标从桌宠挪到面板上不误判移开）；拖动中/松手 800ms 内、配置面板开着时让位（左键点桌宠 = 进配置，别在它脸上再叠一张）。pet.html 不再挂鼠标事件，pet shim 去掉 `hoverUsage`，`usage_hover` 命令删除；新增 `KB_USAGE_DEBUG` 逐 tick 打印光标与桌宠矩形 |
+| v5.2 | 2026-09-25 | 胡嘉 | Copilot 卡片改显示真实 **AI Credits**：2026-06-01 起 Copilot 转按量计费，旧的 `premium_request/usage` 账单接口对**组织分配的席位**（如 `bosch-copilot` 发的 Business 席位）返回 200 但 `usageItems` 为空 —— 卡片永远显示假的 `0/300`。改为走 Copilot 客户端同款内部接口 `GET api.github.com/copilot_internal/user`，读 `quota_snapshots.premium_interactions`（`entitlement` / `credits_used` / `remaining` / `percent_remaining`）。该接口**只认 OAuth token**（`gho_` / `ghu_`）：细粒度 PAT 401、Copilot 会话 token（`tid=…`）也 401。凭据按 **手填 token → pi 登录态（`~/.pi/agent/auth.json` 的 `github-copilot.refresh`）→ macOS 钥匙串 `copilot-cli`** 顺序自动发现，全找不到才退回旧账单接口；配置面板新增「凭据来源 + Token」两行，卡片加 `bosch-copilot 席位 · pi 登录态` 来源行与千分位数字 |
+
+| v5.3 | 2026-09-25 | 胡嘉 | 用量面板转极简：①**只显示已配置的账号**，没配置的卡片不占位（全空时给一行提示）②所有卡片**统一高度**（`.acct { min-height:64px }` 固定三段：头部 / 标尺 / 说明行），再也不会一张三行一张七行③Copilot 去掉「凭据来源」那行（`pi 登录态` 之类），只留 `剩 14,302（29%）· 4天后重置 · bosch-copilot`；模型 Top5 一并删掉④博世 MFC 只显示总金额 `¥102.55`，不再列今日/模型明细⑤窗口高度跟着卡片数收拢：渲染层算好内容高度上报 `usage_panel_height`，主进程缓存后**下次弹出前**改窗口尺寸（显示中只允许变高，变矮会把光标甩出悬停保持区）⑥`cursor_in_hover_zone` 改用窗口实际尺寸，不再拿写死的 `USAGE_H` 判命中 |
 
 ## 链接
 - 无
@@ -65,11 +69,11 @@ date: 2026-09-21
 
 一只卡皮巴拉桌宠常驻桌面，**鼠标悬停它就能看你所有 AI 订阅账号的用量**（GitHub Copilot / 智谱 GLM Coding Plan / 博世 MFC），**左键点击进入极简订阅配置**；右键随机换动画、拖动随身带；本地事件通道让 Antigravity / Claude Code / pi 的生命周期驱动它的动作。
 
-**订阅用量（v5.0）**
+**订阅用量（v5.0 / Copilot 计量 v5.2）**
 
 | 供应商 | 配置 | 查询内容 | 接口 |
 | --- | --- | --- | --- |
-| GitHub Copilot（默认） | 用户名 + PAT + 套餐 | Premium 月额度（已用/上限/重置倒计时/模型 Top5） | `api.github.com/users/{u}/settings/billing/premium_request/usage` |
+| GitHub Copilot（默认） | 凭据来源（自动 / 手填 Token / PAT） | **AI Credits** 月额度：已用 / 上限 / 剩余（%）/ 重置倒计时 + 席位组织 | 首选 `api.github.com/copilot_internal/user` → `quota_snapshots`；兜底 `api.github.com/users/{u}/settings/billing/premium_request/usage`（旧 Premium 请求，个人订阅） |
 | 智谱中国 | **只填 API Key**，无需 URL | GLM Coding Plan 5h / 本周 / 本月窗口 + 重置时间 | `open.bigmodel.cn/api/monitor/usage/quota/limit` |
 | 自定义 | URL + Key | 博世 MFC：月/今日费用+tokens+模型 Top5；URL 若是智谱系则同智谱查询 | `aigc.bosch.com.cn/llmservice/api/v1/client/usage` |
 
@@ -168,7 +172,7 @@ ln -sf ~/Desktop/Working/2026-09_kapybara-buddy/pi-extension/kapybara-bridge.ts 
 
 ```
 app/                     前端（打包进二进制）
-  pet.html               桌宠渲染层（帧动画/多Agent状态机/拖动交互/悬停触发）
+  pet.html               桌宠渲染层（帧动画/多Agent状态机/拖动交互；悬停触发在主进程，见 main.rs hover_tick）
   config.html            订阅配置面板（左键呼出）
   usage.html             悬浮用量面板（悬停呼出）
   frames/                PNG 帧素材
@@ -195,6 +199,7 @@ pi-extension/            pi 扩展
 | `KB_USAGE_POLL_SEC` | `300` | 订阅用量后台轮询间隔（秒，60~86400） |
 | `KB_PET_DEBUG` | 未开 | 开启后桌宠状态每 300ms 上报到 `$TMPDIR/pet-debug.log` |
 | `KB_FAST` | 未开 | 加速所有时间阈值（测试用） |
+| `KB_USAGE_DEBUG` | 未开 | 逐 tick 打印光标位置、悬停命中/离开与桌宠矩形（排查"悬停不弹用量面板"用） |
 
 注：v5.0 移除 `KB_BACKEND` / `KB_AGY_MODEL` / `KB_TEST_ASK` / `KB_TEST_ASK2`（问答功能已删）。窗口尺寸/热键等常量在 `src-tauri/src/main.rs` 与 `geom.rs` 顶部。
 

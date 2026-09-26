@@ -15,31 +15,35 @@
   #refresh { border: none; background: rgba(255,255,255,0.09); color: #cfd4da; border-radius: 7px;
              padding: 3px 10px; font-size: 11px; cursor: pointer; }
   #refresh:hover { background: rgba(255,255,255,0.16); }
-  #list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+  #list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
   #list::-webkit-scrollbar { width: 0; }
-  .acct { background: rgba(255,255,255,0.055); border-radius: 10px; padding: 8px 10px 9px; }
-  .acct-head { display: flex; align-items: baseline; gap: 6px; margin-bottom: 6px; }
-  .acct-head .name { font-size: 12px; font-weight: 700; }
+
+  /* 卡片：固定高度、3 段结构（头部 / 标尺 / 说明），无型号和冗余 */
+  .acct { background: rgba(255,255,255,0.055); border-radius: 10px; padding: 8px 10px;
+          min-height: 64px; display: flex; flex-direction: column; justify-content: center; }
+  .acct-head { display: flex; align-items: baseline; gap: 6px; }
+  .acct-head .name { font-size: 12px; font-weight: 700; white-space: nowrap; }
   .acct-head .badge { font-size: 9.5px; color: #9aa3ad; background: rgba(255,255,255,0.09);
-                      border-radius: 5px; padding: 1px 5px; }
-  .acct-head .val { margin-left: auto; font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
-  .bar { height: 5px; border-radius: 3px; background: rgba(255,255,255,0.10); overflow: hidden; margin: 4px 0 3px; }
-  .bar > i { display: block; height: 100%; border-radius: 3px; background: #58c273; }
+                      border-radius: 5px; padding: 1px 5px; white-space: nowrap; }
+  .acct-head .val { margin-left: auto; font-size: 11.5px; font-weight: 600; white-space: nowrap;
+                    font-variant-numeric: tabular-nums; }
+  .acct-head .val.sm { font-size: 10.5px; }
+
+  /* 统一标尺段：始终占位，没数值时不显示轨道色 */
+  .bar { height: 4px; border-radius: 2px; margin: 3px 0; }
+  .bar > i { display: block; height: 100%; border-radius: 2px; background: #58c273; }
   .bar > i.warn { background: #e5b45b; }
   .bar > i.bad { background: #e06c60; }
-  .wrow { display: flex; align-items: center; gap: 6px; margin-top: 3px; }
-  .wrow .wname { width: 30px; flex: none; font-size: 10px; color: #9aa3ad; }
-  .wrow .bar { flex: 1; margin: 0; }
-  .wrow .wpct { width: 34px; flex: none; text-align: right; font-size: 10px; color: #cfd4da; font-variant-numeric: tabular-nums; }
-  .sub { font-size: 10px; color: #8a8f98; margin-top: 2px; }
-  .models { margin-top: 4px; }
-  .models .m { display: flex; justify-content: space-between; font-size: 10px; color: #aeb4bd;
-               padding: 1px 0; font-variant-numeric: tabular-nums; }
-  .err { font-size: 11px; color: #e06c60; line-height: 1.45; }
-  .warn2 { font-size: 11px; color: #e5b45b; line-height: 1.45; }
-  .pending { font-size: 11px; color: #6b7078; }
+
+  /* 说明行 */
+  .sub { font-size: 10px; color: #8a8f98; white-space: nowrap; overflow: hidden;
+         text-overflow: ellipsis; min-height: 14px; }
+  .sub.err { color: #e06c60; }
+  .sub.warn2 { color: #e5b45b; }
+
+  .pending { font-size: 10px; color: #6b7078; }
   footer { font-size: 10px; color: #6b7078; margin-top: 8px; display: flex; justify-content: space-between; }
-  .off { font-size: 11px; color: #6b7078; line-height: 1.5; }
+  .empty { font-size: 11px; color: #6b7078; text-align: center; padding: 18px 0; }
 </style>
 </head>
 <body>
@@ -57,11 +61,8 @@
 const $ = (id) => document.getElementById(id);
 const NAMES = { copilot: 'GitHub Copilot', zhipu: '智谱中国', custom: '自定义' };
 
-function fmtTokens(n) {
-  n = n || 0;
-  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
-  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
-  return String(Math.round(n));
+function fmtNum(n) {
+  return String(Math.round(n || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 function fmtCountdown(ms) {
   if (!ms) return '';
@@ -76,57 +77,78 @@ function esc(s) { const d = document.createElement('div'); d.textContent = Strin
 
 const WNAMES = { '5h': '5h', week: '周', month: '月', mcp: 'MCP' };
 
+/** 统一 3 段布局：头部 + 标尺 + 说明，min-height:64px */
 function acctCard(key, usage, cfg) {
   const enabled = cfg && cfg.enabled;
-  const head = (name, badge, val) =>
+  if (!enabled) return ''; // 没配置则不显示卡片
+
+  const head = (name, badge, val, valCls) =>
     `<div class="acct-head"><span class="name">${name}</span>` +
     (badge ? `<span class="badge">${esc(badge)}</span>` : '') +
-    (val ? `<span class="val">${val}</span>` : '') + `</div>`;
+    (val ? `<span class="val${valCls ? ' ' + valCls : ''}">${val}</span>` : '') + `</div>`;
 
-  if (!enabled) {
-    return `<div class="acct">${head(NAMES[key])}<div class="off">未启用 · 左键点桌宠配置</div></div>`;
-  }
+  // not yet fetched / error / unsupported
   if (!usage || usage.kind === 'pending') {
-    return `<div class="acct">${head(NAMES[key])}<div class="pending">查询中…</div></div>`;
+    return `<div class="acct">${head(NAMES[key])}<div class="bar"></div><div class="sub pending">查询中…</div></div>`;
   }
   if (usage.kind === 'error') {
-    return `<div class="acct">${head(NAMES[key])}<div class="err">✗ ${esc(usage.message)}</div></div>`;
+    return `<div class="acct">${head(NAMES[key])}<div class="bar"></div><div class="sub err">✗ ${esc(usage.message)}</div></div>`;
   }
   if (usage.kind === 'unsupported') {
-    return `<div class="acct">${head(NAMES[key])}<div class="warn2">⚠ ${esc(usage.message)}</div></div>`;
+    return `<div class="acct">${head(NAMES[key])}<div class="bar"></div><div class="sub warn2">⚠ ${esc(usage.message)}</div></div>`;
   }
+
   if (usage.kind === 'copilot') {
-    const pct = usage.limit > 0 ? Math.min(100, (usage.used / usage.limit) * 100) : 0;
-    const models = (usage.models || []).slice(0, 5).map((m) =>
-      `<div class="m"><span>${esc(m.model)}</span><span>${fmtTokens(m.value)}</span></div>`).join('');
+    const num = usage.credits ? fmtNum : (v) => String(Math.round(v));
+    const unlimited = usage.credits && !(usage.limit > 0);
+    const pct = unlimited ? 0 : (usage.limit > 0 ? Math.min(100, (usage.used / usage.limit) * 100) : 0);
+    let sub;
+    if (unlimited) {
+      sub = '不限额';
+    } else if (usage.credits) {
+      const left = Math.max(0, usage.remaining != null ? usage.remaining : usage.limit - usage.used);
+      const leftPct = usage.limit > 0 ? Math.round((left / usage.limit) * 100) : 0;
+      sub = `剩 ${num(left)}（${leftPct}%）· ${fmtCountdown(usage.reset_at_ms)}`;
+      if (usage.org) sub += ` · ${esc(usage.org)}`;
+    } else {
+      sub = usage.period ? `账期 ${esc(usage.period)} · ${fmtCountdown(usage.reset_at_ms)}` : '';
+    }
     return `<div class="acct">` +
-      head('GitHub Copilot', usage.tier.toUpperCase(), `${Math.round(usage.used)}/${Math.round(usage.limit)}`) +
-      `<div class="bar"><i class="${barCls(pct)}" style="width:${pct}%"></i></div>` +
-      (usage.period ? `<div class="sub">账期 ${esc(usage.period)} · ${fmtCountdown(usage.reset_at_ms)}</div>` : '') +
-      (models ? `<div class="models">${models}</div>` : '') +
+      head('GitHub Copilot', (usage.tier || '').toUpperCase(),
+        unlimited ? '不限额' : `${num(usage.used)}/${num(usage.limit)}`, usage.credits ? 'sm' : '') +
+      (unlimited ? '<div class="bar"></div>' : `<div class="bar"><i class="${barCls(pct)}" style="width:${pct}%"></i></div>`) +
+      `<div class="sub">${sub}</div>` +
       `</div>`;
   }
+
   if (usage.kind === 'zhipu') {
-    const rows = (usage.windows || []).map((w) =>
-      `<div class="wrow"><span class="wname">${WNAMES[w.kind] || w.kind}</span>` +
-      `<div class="bar"><i class="${barCls(w.pct)}" style="width:${w.pct}%"></i></div>` +
-      `<span class="wpct">${Math.round(w.pct)}%</span></div>` +
-      (w.reset_at_ms ? `<div class="sub" style="margin-left:36px">${fmtCountdown(w.reset_at_ms)}</div>` : ''));
+    const ws = usage.windows || [];
+    // 主看周额度（GLM Coding Plan 卡人的就是周窗口）；没有 week 才退而取最大的那个
+    const main = ws.find(w => w.kind === 'week')
+      || ws.reduce((a, b) => (!a || b.pct > a.pct ? b : a), null);
+    const pct = main ? Math.min(100, Math.round(main.pct)) : 0;
+    const bar = main
+      ? `<div class="bar"><i class="${barCls(pct)}" style="width:${pct}%"></i></div>`
+      : '<div class="bar"></div>';
+    // 说明行：周额度的重置倒计时在前，其余窗口在后
+    const reset = main && main.reset_at_ms ? fmtCountdown(main.reset_at_ms) : '';
+    const segs = ws.filter(w => w !== main)
+      .map(w => `${WNAMES[w.kind] || w.kind} ${Math.round(w.pct)}%`)
+      .slice(0, 3);
+    const sub = [reset].concat(segs).filter(Boolean).join(' · ');
     return `<div class="acct">` +
-      head('智谱中国', usage.level ? 'GLM ' + usage.level : 'GLM', (usage.windows || []).length ? Math.round(Math.max(0, ...usage.windows.map(w => w.pct))) + '%' : '') +
-      (rows.join('') || '<div class="pending">无窗口数据</div>') +
+      head('智谱中国', usage.level ? esc(usage.level) : 'GLM', main ? pct + '%' : '') +
+      bar +
+      `<div class="sub">${sub}</div>` +
       `</div>`;
   }
+
   if (usage.kind === 'mfc') {
-    const m = usage.month || { cost: 0, total_tokens: 0, models: [] };
-    const models = (m.models || []).map((x) =>
-      `<div class="m"><span>${esc(x.model)}</span><span>${x.value.toFixed(2)}</span></div>`).join('');
+    const m = usage.month || { cost: 0 };
     return `<div class="acct">` +
-      head('博世 MFC', '月度', m.cost.toFixed(2)) +
-      `<div class="sub">本月 ${m.cost.toFixed(2)} · ${fmtTokens(m.total_tokens)} tokens` +
-      (usage.today ? ` · 今日 ${usage.today.cost.toFixed(2)}（${fmtTokens(usage.today.total_tokens)}）` : '') +
-      `</div>` +
-      (models ? `<div class="models">${models}</div>` : '') +
+      head('博世 MFC', '月度', '¥' + m.cost.toFixed(2)) +
+      `<div class="bar"></div>` +
+      `<div class="sub"></div>` +
       `</div>`;
   }
   return '';
@@ -136,18 +158,37 @@ function apply(payload) {
   if (!payload) return;
   const cfg = payload.config || {};
   const us = payload.usages || {};
-  let html = '';
-  html += acctCard('copilot', us.copilot, cfg.copilot);
-  html += acctCard('zhipu', us.zhipu, cfg.zhipu);
-  html += acctCard('custom', us.custom, cfg.custom);
+  const keys = ['copilot', 'zhipu', 'custom'];
+  // 只渲染已配置的供应商，未配置的不占位
+  let html = keys.map(k => acctCard(k, us[k], cfg[k])).filter(Boolean).join('');
+  if (!html) {
+    html = '<div class="empty">未配置任何账号 · 左键点桌宠配置</div>';
+  }
   $('list').innerHTML = html;
   const fa = payload.fetchedAt;
   $('fetched-at').textContent = fa ? new Date(fa).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) + ' 更新' : '';
+  reportHeight(); // 同步上报：读 offsetHeight 会强制回流，已是最新布局
 }
 
 $('refresh').addEventListener('click', () => window.buddy.refresh());
-document.addEventListener('mouseenter', () => window.buddy.panelHover(true));
-document.addEventListener('mouseleave', () => window.buddy.panelHover(false));
+document.documentElement.addEventListener('mouseenter', () => window.buddy.panelHover(true));
+document.documentElement.addEventListener('mouseleave', () => window.buddy.panelHover(false));
+
+/* 上报内容高度：面板只显示已配置账号，主进程据此收拢窗口 */
+function reportHeight() {
+  const list = $('list');
+  const cards = list.children;
+  const n = cards.length;
+  if (n === 0) return; // 还没数据，待 apply 再报
+  let listH = 0;
+  for (const c of cards) listH += c.offsetHeight;
+  listH += (n - 1) * 8; // #list gap 8px
+  const headerH = document.querySelector('header').offsetHeight;
+  const footerH = document.querySelector('footer').offsetHeight;
+  const pad = 12 + 8 + 8 + 10; // body pt12 + header mb8 + list area + footer mt8 + body pb10
+  const h = Math.ceil(pad + headerH + listH + footerH);
+  window.buddy.panelHeight(h);
+}
 
 window.buddy.onUsageUpdate(apply);
 window.buddy.getState().then(apply).catch(() => {});

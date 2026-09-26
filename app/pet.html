@@ -332,17 +332,12 @@ setInterval(() => {
   }
 }, 500);
 
-/* ---------- 悬停：弹出订阅用量面板（350ms 防抖，避免划过就弹） ---------- */
-let hoverTimer = null;
-document.documentElement.addEventListener('mouseenter', () => {
-  if (down || dragging) return;
-  clearTimeout(hoverTimer);
-  hoverTimer = setTimeout(() => window.buddy.hoverUsage(true), 350);
-});
-document.documentElement.addEventListener('mouseleave', () => {
-  clearTimeout(hoverTimer);
-  window.buddy.hoverUsage(false);
-});
+/* ---------- 悬停：弹出订阅用量面板 ----------
+   触发不在渲染层做：桌宠窗是 focusable(false)（不许抢焦点），非 key 窗口的 WebView
+   命中测试不可靠——光标已经停在宠物身上时窗口才出现、或拿不到 key 就收不到
+   mouseenter，而 mouseleave 同样不来，enter/leave 配不上对就永久哑火（表现为
+   "鼠标放在桌宠上不弹用量面板"）。改由主进程按全局光标判定（main.rs hover_tick +
+   usage::cursor_in_hover_zone，350ms 防抖、出圈 600ms 宽限），这里不再挂鼠标事件。 */
 
 /* ---------- 拖动：被提溜（拖动全程算活动，不会睡着） ---------- */
 let down = null, dragging = false;
@@ -352,12 +347,10 @@ document.addEventListener('mousedown', (e) => {
     return;
   }
   if (e.button !== 0) return;                          // 其余只认左键
-  clearTimeout(hoverTimer);
-  window.buddy.hoverUsage(false);                      // 拖动/点击时用量面板让位
   down = { x: e.clientX, y: e.clientY };
   dragging = false;
   lastActivity = Date.now();
-  window.buddy.petDragStart(e.screenX, e.screenY);
+  window.buddy.petDragStart(e.screenX, e.screenY);     // 主进程侧顺带收走用量面板
   try { document.body.setPointerCapture(e.pointerId); } catch (_) {}
 });
 function endDrag() {

@@ -75,16 +75,18 @@ pub fn usage_refresh(app: AppHandle) {
     tauri::async_runtime::spawn(async move { usage::refresh_all(&h).await });
 }
 
-/// 悬停面板：show=true 立即贴宠物显示；false 延迟 600ms 隐藏（进面板可取消）
-#[tauri::command]
-pub fn usage_hover(app: AppHandle, show: bool) {
-    usage::hover(&app, show);
-}
-
 /// 鼠标在面板内/外（面板窗口自己上报，用于保持/取消隐藏）
+///
+/// 弹面板本身由主进程按全局光标判定（main.rs hover_tick），桌宠窗不再上报悬停。
 #[tauri::command]
 pub fn usage_panel_hover(app: AppHandle, hovered: bool) {
     usage::hover(&app, hovered);
+}
+
+/// 用量面板上报自身内容高度（只显示已配置账号，卡片数不同高度不同）
+#[tauri::command]
+pub fn usage_panel_height(app: AppHandle, h: f64) {
+    usage::set_panel_height(&app, h);
 }
 
 /// 配置面板 Esc / 手动关闭

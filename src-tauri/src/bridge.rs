@@ -1,6 +1,8 @@
 //! 注入到各 WebView 的桥接脚本
 //!
 //! v5.0：pet（桌宠 + 悬停触发用量面板）/ config（订阅配置）/ usage（悬浮用量面板）
+//! v5.1：悬停触发移出渲染层——桌宠窗 focusable(false)，WebView 的 mouseenter/mouseleave
+//!       不可靠，改由主进程按全局光标判定（main.rs hover_tick）；pet shim 去掉 hoverUsage
 //! 原问答桥接（ask/answer-chunk 等）随问答功能一并移除。
 
 /// 桌宠窗口的 window.buddy shim（pet.html 依赖面）
@@ -24,7 +26,6 @@ const PET_SHIM: &str = r#"(function () {
     petDragMove: function (sx, sy) { invokeLater('pet_drag_move', { sx: sx, sy: sy }); },
     petDragEnd: function () { invokeLater('pet_drag_end', {}); },
     petClick: function () { invokeLater('pet_click', {}); },
-    hoverUsage: function (show) { invokeLater('usage_hover', { show: !!show }); },
     onCursor: function (cb) { listenEv('cursor', cb); },
     onPetEvent: function (cb) { listenEv('pet-event', function (p) { cb(p.e, p.ms, p.fallback, p.activeCount); }); },
   };
@@ -52,6 +53,7 @@ const PANEL_SHIM: &str = r#"(function () {
     refresh: function () { invokeLater('usage_refresh', {}); },
     hide: function () { invokeLater('hide_config', {}); },
     panelHover: function (hovered) { invokeLater('usage_panel_hover', { hovered: !!hovered }); },
+    panelHeight: function (h) { invokeLater('usage_panel_height', { h: h }); },
     onUsageUpdate: function (cb) { listenEv('usage-update', cb); },
   };
 })();"#;
@@ -114,6 +116,10 @@ pub fn build_pet() -> String {
     pet_init_js()
 }
 
+/// 面板窗口（config/usage）：同一套 shim + console 转发（排错需要看到它们的 JS 报错）
 pub fn build_panel() -> String {
-    PANEL_SHIM.to_string()
+    let mut js = String::new();
+    js.push_str(PANEL_SHIM);
+    js.push_str(PET_CONSOLE);
+    js
 }

@@ -45,6 +45,8 @@
   .status.err { color: #e06c60; }
   .tip { font-size: 10.5px; color: #6b7078; margin: 5px 0 0 60px; }
   .tip b { color: #9aa3ad; font-weight: 600; }
+  .tip code { font-size: 10px; color: #8f97a2; background: rgba(255,255,255,0.05);
+              padding: 0 3px; border-radius: 3px; }
   footer { display: flex; justify-content: space-between; align-items: center; margin-top: 8px;
            font-size: 10.5px; color: #6b7078; }
 </style>
@@ -62,13 +64,25 @@
     <!-- GitHub Copilot（默认） -->
     <section class="card" id="card-copilot">
       <div class="card-head">
-        <span class="name">GitHub Copilot</span><span class="sub">默认 · Premium 请求月额度</span>
+        <span class="name">GitHub Copilot</span><span class="sub">默认 · AI Credits 月额度</span>
         <label class="toggle"><input type="checkbox" id="copilot-enabled"><i></i></label>
       </div>
       <div class="body">
         <div class="row">
+          <label>凭据</label>
+          <select id="copilot-source">
+            <option value="auto">自动（读 pi / Copilot CLI 登录态）</option>
+            <option value="token">手填 OAuth Token</option>
+            <option value="pat">旧版账单接口（PAT）</option>
+          </select>
+        </div>
+        <div class="row" id="copilot-token-row">
+          <label>Token</label>
+          <input id="copilot-token" type="password" placeholder="gho_ / ghu_ 开头的 OAuth token（留空 = 自动发现）">
+        </div>
+        <div class="row">
           <label>用户名</label>
-          <input id="copilot-username" placeholder="GitHub 用户名">
+          <input id="copilot-username" placeholder="GitHub 用户名（PAT 方式才用）">
           <label>套餐</label>
           <select id="copilot-tier" style="flex:0 0 110px">
             <option value="free">Free (50)</option>
@@ -80,9 +94,9 @@
         </div>
         <div class="row">
           <label>PAT</label>
-          <input id="copilot-pat" type="password" placeholder="GitHub PAT（github.com → Settings → Developer settings）">
+          <input id="copilot-pat" type="password" placeholder="GitHub PAT（配额接口失败时的兜底）">
         </div>
-        <div class="tip">额度上限优先取接口返回值，取不到时按所选套餐兜底；重置时间为<b>每月 1 日 UTC</b>。</div>
+        <div class="tip">组织分配的 Copilot 席位（Business/Enterprise）只认 <b>OAuth token</b>，走 <code>api.github.com/copilot_internal/user</code> 读配额快照；细粒度 PAT 一定会 401/404。<br>自动模式按 <b>pi 登录态 → copilot-cli 钥匙串</b> 的顺序找 token，找不到就退成 PAT 账单接口（老计量单位）。</div>
         <div class="status" id="copilot-status"></div>
       </div>
     </section>
@@ -133,7 +147,8 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const fields = {
-  copilot: { enabled: $('copilot-enabled'), username: $('copilot-username'), tier: $('copilot-tier'), pat: $('copilot-pat') },
+  copilot: { enabled: $('copilot-enabled'), username: $('copilot-username'), tier: $('copilot-tier'),
+             pat: $('copilot-pat'), source: $('copilot-source'), token: $('copilot-token') },
   zhipu:   { enabled: $('zhipu-enabled'), key: $('zhipu-key') },
   custom:  { enabled: $('custom-enabled'), url: $('custom-url'), key: $('custom-key') },
 };
@@ -166,7 +181,16 @@ function fmtUsageLine(kind, u) {
   if (!u) return '尚未查询';
   if (u.kind === 'error') return '✗ ' + (u.message || '查询失败');
   if (u.kind === 'unsupported') return '⚠ ' + (u.message || '暂不支持');
-  if (u.kind === 'copilot') return '✓ Premium ' + u.used + '/' + u.limit + (u.period ? '（账期 ' + u.period + '）' : '');
+  if (u.kind === 'copilot') {
+    const n = (v) => String(Math.round(v || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    if (u.credits) {
+      const head = u.limit > 0 ? n(u.used) + '/' + n(u.limit) : '不限额';
+      const left = u.limit > 0 ? ' · 剩 ' + n(u.remaining != null ? u.remaining : u.limit - u.used) : '';
+      const org = u.org ? ' · ' + u.org + ' 席位' : '';
+      return '✓ AI Credits ' + head + left + org + (u.source ? '（' + u.source + '）' : '');
+    }
+    return '✓ Premium ' + u.used + '/' + u.limit + (u.period ? '（账期 ' + u.period + '）' : '');
+  }
   if (u.kind === 'zhipu') {
     const names = { '5h': '5h', week: '周', month: '月', mcp: 'MCP' };
     const parts = (u.windows || []).map((w) => names[w.kind] + ' ' + Math.round(w.pct) + '%');
@@ -197,6 +221,9 @@ function fillForm(cfg) {
   fields.copilot.username.value = cfg.copilot.username || '';
   fields.copilot.tier.value = cfg.copilot.tier || 'pro';
   fields.copilot.pat.value = cfg.copilot.pat || '';
+  fields.copilot.source.value = cfg.copilot.source || 'auto';
+  fields.copilot.token.value = cfg.copilot.token || '';
+  syncCopilotTokenRow();
   fields.zhipu.enabled.checked = !!cfg.zhipu.enabled;
   fields.zhipu.key.value = cfg.zhipu.key || '';
   fields.custom.enabled.checked = !!cfg.custom.enabled;
@@ -207,6 +234,13 @@ function fillForm(cfg) {
   }
   renderDetect();
 }
+/* 走旧账单接口时不需要 OAuth token，把那一行收起来 */
+function syncCopilotTokenRow() {
+  const pat = fields.copilot.source.value === 'pat';
+  $('copilot-token-row').style.display = pat ? 'none' : '';
+}
+fields.copilot.source.addEventListener('change', syncCopilotTokenRow);
+
 for (const k of ['copilot', 'zhipu', 'custom']) {
   fields[k].enabled.addEventListener('change', () => $(`card-${k}`).classList.toggle('off', !fields[k].enabled.checked));
 }
@@ -218,6 +252,8 @@ function collect() {
       username: fields.copilot.username.value.trim(),
       tier: fields.copilot.tier.value,
       pat: fields.copilot.pat.value.trim(),
+      source: fields.copilot.source.value,
+      token: fields.copilot.token.value.trim(),
     },
     zhipu: { enabled: fields.zhipu.enabled.checked, key: fields.zhipu.key.value.trim() },
     custom: {

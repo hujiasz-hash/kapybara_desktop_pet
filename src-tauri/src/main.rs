@@ -16,7 +16,7 @@ mod pievent;
 mod state;
 mod usage;
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
@@ -42,8 +42,8 @@ fn main() {
             commands::usage_state,
             commands::usage_save,
             commands::usage_refresh,
-            commands::usage_hover,
             commands::usage_panel_hover,
+            commands::usage_panel_height,
             commands::hide_config,
         ])
         .setup(|app| {
@@ -218,9 +218,11 @@ pub fn toggle_config(app: &AppHandle) {
     let _ = app.emit("usage-update", usage::state_json(app));
 }
 
-/// 光标轮询：宠物朝向跟随（120ms）+ 拖动泄漏兜底（对应主进程 setInterval）
+/// 光标轮询：宠物朝向跟随（120ms）+ 悬停弹出用量面板 + 拖动泄漏兜底（对应主进程 setInterval）
 fn start_cursor_loop(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
+        let mut hover = HoverState::default();
+        let verbose = std::env::var("KB_USAGE_DEBUG").is_ok();
         loop {
             tokio::time::sleep(Duration::from_millis(120)).await;
             let Some(pet) = app.get_webview_window("pet") else { continue };
@@ -234,6 +236,8 @@ fn start_cursor_loop(app: AppHandle) {
                 "cursor",
                 serde_json::json!({ "mx": mx, "my": my, "px": px, "py": py }),
             );
+
+            hover_tick(&app, mx, my, &mut hover, verbose);
 
             // 兜底：拖动 IPC 停滞 0.9s 且光标在窗口外（外扩 50px）→ mouseup 丢失，强制结束拖动
             let st = app.state::<AppState>();
@@ -252,6 +256,81 @@ fn start_cursor_loop(app: AppHandle) {
             }
         }
     });
+}
+
+/// 悬停判定参数：贴到桌宠身上满 350ms → 弹面板（沿用 pet.html 原先的防抖手感）
+const HOVER_DELAY: Duration = Duration::from_millis(350);
+/// 拖动中 / 松手后这段时间内不弹面板：拖动时窗口跟着光标走，光标必然压在桌宠上
+const DRAG_MUTE: Duration = Duration::from_millis(800);
+
+/// 悬停状态机（主进程侧判定，命中测试见 usage::cursor_in_hover_zone）
+#[derive(Default)]
+struct HoverState {
+    /// 光标连续落在保持区内的起点（离开即清零，用于 350ms 防抖）
+    inside_since: Option<Instant>,
+    /// 面板当前是否由悬停维持显示（只在状态翻转时调一次 hover，避免每 tick 重复 IPC）
+    shown: bool,
+    /// 最近一次拖动活动时间（拖动中每 tick 刷新，用于松手后的静默期）
+    last_drag_at: Option<Instant>,
+}
+
+/// 每 tick 判定一次悬停：进圈满 350ms 弹面板，出圈交给 usage::hover 的 600ms 宽限
+/// （光标从桌宠挪到面板上的那几像素空隙不会被误判成"移开"）
+///
+/// `verbose`（KB_USAGE_DEBUG）逐 tick 打光标与桌宠矩形，排查"悬停哑火"用
+fn hover_tick(app: &AppHandle, mx: f64, my: f64, hs: &mut HoverState, verbose: bool) {
+    let st = app.state::<AppState>();
+    if st.drag.lock().unwrap().is_some() {
+        hs.last_drag_at = Some(Instant::now());
+    }
+    let muted = hs.last_drag_at.map(|t| t.elapsed() < DRAG_MUTE).unwrap_or(false);
+    // 配置面板开着时让位：左键点桌宠 = 进配置，别在它脸上再弹一张用量面板
+    let config_open = app
+        .get_webview_window("config")
+        .map(|w| w.is_visible().unwrap_or(false))
+        .unwrap_or(false);
+
+    let in_zone = usage::cursor_in_hover_zone(app, mx, my);
+    if verbose {
+        let rect = app.get_webview_window("pet").and_then(|p| {
+            let pos = p.outer_position().ok()?;
+            let s = geom::scale_at_phys(app, pos.x, pos.y);
+            Some(format!(
+                "pet 物理=({},{}) scale={} → CSS=({:.1},{:.1})+{}",
+                pos.x,
+                pos.y,
+                s,
+                pos.x as f64 / s,
+                pos.y as f64 / s,
+                geom::PET_SIZE
+            ))
+        });
+        println!(
+            "[usage] tick 光标=({:.0},{:.0}) zone={} muted={} config={} {}",
+            mx,
+            my,
+            in_zone,
+            muted,
+            config_open,
+            rect.unwrap_or_else(|| "pet 窗口缺失".into())
+        );
+    }
+
+    if muted || config_open || !in_zone {
+        hs.inside_since = None;
+        if hs.shown {
+            hs.shown = false;
+            println!("[usage] 悬停离开 光标=({:.0}, {:.0})", mx, my);
+            usage::hover(app, false);
+        }
+        return;
+    }
+    let since = *hs.inside_since.get_or_insert_with(Instant::now);
+    if !hs.shown && since.elapsed() >= HOVER_DELAY {
+        hs.shown = true;
+        println!("[usage] 悬停命中 光标=({:.0}, {:.0}) 判定用时={}ms", mx, my, since.elapsed().as_millis());
+        usage::hover(app, true);
+    }
 }
 
 /// 启动预学：初始位置若被系统弹回（台前调度条），用弹回结果学边界（README v2.4）
