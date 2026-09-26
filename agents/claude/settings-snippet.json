@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/hujia/Desktop/Working/2026-09_kapybara-buddy/agents/claude/hook.sh SessionStart",
+            "command": "~/.kapybara-buddy/hooks/claude-hook.sh SessionStart",
             "timeout": 5
           }
         ]
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/hujia/Desktop/Working/2026-09_kapybara-buddy/agents/claude/hook.sh UserPromptSubmit",
+            "command": "~/.kapybara-buddy/hooks/claude-hook.sh UserPromptSubmit",
             "timeout": 5
           }
         ]
@@ -30,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/hujia/Desktop/Working/2026-09_kapybara-buddy/agents/claude/hook.sh PreToolUse",
+            "command": "~/.kapybara-buddy/hooks/claude-hook.sh PreToolUse",
             "timeout": 5
           }
         ]
@@ -42,7 +42,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/hujia/Desktop/Working/2026-09_kapybara-buddy/agents/claude/hook.sh PostToolUse",
+            "command": "~/.kapybara-buddy/hooks/claude-hook.sh PostToolUse",
             "timeout": 5
           }
         ]
@@ -54,7 +54,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/hujia/Desktop/Working/2026-09_kapybara-buddy/agents/claude/hook.sh PostToolUseFailure",
+            "command": "~/.kapybara-buddy/hooks/claude-hook.sh PostToolUseFailure",
             "timeout": 5
           }
         ]
@@ -66,7 +66,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/hujia/Desktop/Working/2026-09_kapybara-buddy/agents/claude/hook.sh Stop",
+            "command": "~/.kapybara-buddy/hooks/claude-hook.sh Stop",
             "timeout": 5
           }
         ]
@@ -78,7 +78,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/hujia/Desktop/Working/2026-09_kapybara-buddy/agents/claude/hook.sh PreCompact",
+            "command": "~/.kapybara-buddy/hooks/claude-hook.sh PreCompact",
             "timeout": 5
           }
         ]
@@ -90,7 +90,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/hujia/Desktop/Working/2026-09_kapybara-buddy/agents/claude/hook.sh SessionEnd",
+            "command": "~/.kapybara-buddy/hooks/claude-hook.sh SessionEnd",
             "timeout": 5
           }
         ]

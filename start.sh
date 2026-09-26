@@ -1,9 +1,11 @@
 #!/bin/bash
 # kapybara-buddy 启停（macOS，Tauri 版）
-# 产物目录在 ~/Library/Caches（项目在 ~/Desktop 下受 iCloud 同步管理，编译产物放那里会被
-# fileproviderd 动元数据导致 AMFI 误杀，见 src-tauri/.cargo/config.toml 注释）
+# 产物目录用 CARGO_TARGET_DIR 环境变量注入（与 start.bat 同款可移植写法，任何用户开箱可编）：
+# 项目放在 OneDrive/iCloud 等同步目录时，新鲜 dylib 的元数据被 fileproviderd 动过可能触发
+# AMFI "Invalid Page" 误杀，所以产物放到同步目录外的 ~/Library/Caches
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$HOME/Library/Caches/kapybara-buddy-target}"
 cd "$(dirname "$0")" || exit 1
-BIN="$HOME/Library/Caches/kapybara-buddy-target/release/kapybara-buddy"
+BIN="$CARGO_TARGET_DIR/release/kapybara-buddy"
 case "${1:-start}" in
   start)
     if pgrep -f "kapybara-buddy-target/release/kapybara-buddy" >/dev/null 2>&1; then

@@ -3,7 +3,7 @@
     "PreInvocation": [
       {
         "type": "command",
-        "command": "/Users/hujia/Desktop/Working/2026-09_kapybara-buddy/agents/antigravity/hook.sh PreInvocation",
+        "command": "~/.kapybara-buddy/hooks/antigravity-hook.sh PreInvocation",
         "timeout": 5
       }
     ],
@@ -13,7 +13,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/hujia/Desktop/Working/2026-09_kapybara-buddy/agents/antigravity/hook.sh PreToolUse",
+            "command": "~/.kapybara-buddy/hooks/antigravity-hook.sh PreToolUse",
             "timeout": 5
           }
         ]
@@ -25,7 +25,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/hujia/Desktop/Working/2026-09_kapybara-buddy/agents/antigravity/hook.sh PostToolUse",
+            "command": "~/.kapybara-buddy/hooks/antigravity-hook.sh PostToolUse",
             "timeout": 5
           }
         ]
@@ -34,7 +34,7 @@
     "Stop": [
       {
         "type": "command",
-        "command": "/Users/hujia/Desktop/Working/2026-09_kapybara-buddy/agents/antigravity/hook.sh Stop",
+        "command": "~/.kapybara-buddy/hooks/antigravity-hook.sh Stop",
         "timeout": 5
       }
     ]

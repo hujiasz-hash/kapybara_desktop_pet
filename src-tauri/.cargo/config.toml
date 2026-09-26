@@ -1,8 +1,7 @@
-# 本机（hji1szh）链接器：CLT 为新版（Apple clang 21），默认链路即可，
-# 无需原作者机器（Xcode 12 老 clang 被 AMFI 误杀）的 Homebrew LLVM 绕路方案——
-# 那套配置见 git 历史 / README「本机构建注意」。
-#
-# 唯一保留：编译产物放 ~/Library/Caches。项目在 OneDrive 同步目录下，
-# 新鲜出炉的 dylib 元数据被 fileproviderd 动过可能触发 AMFI "Invalid Page" 间歇性 SIGKILL。
-[build]
-target-dir = "/Users/hji1szh/Library/Caches/kapybara-buddy-target"
+# 编译产物目录不在这里写死（写死绝对路径会让别人克隆后无法编译）。
+# start.sh / start.bat 会通过 CARGO_TARGET_DIR 环境变量注入同步目录外的路径：
+#   macOS:      ~/Library/Caches/kapybara-buddy-target
+#   Windows:    %LOCALAPPDATA%\kapybara-buddy-target
+# 原因：项目在 OneDrive/iCloud 同步目录下时，新鲜出炉的 dylib 元数据被
+# fileproviderd 动过可能触发 AMFI "Invalid Page" 间歇性 SIGKILL。
+# 不经 start.sh 手动 cargo build 也能编（落到默认 src-tauri/target），只是有上述同步目录风险。

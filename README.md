@@ -57,8 +57,8 @@ date: 2026-09-21
 | v5.0 | 2026-09-25 | 胡嘉 | 去问答，转订阅用量面板：①左键点桌宠改弹订阅配置（Copilot 默认 / 智谱中国只填 Key / 自定义 URL+Key，URL 自适应识别博世 MFC、bigmodel.cn、api.z.ai）②鼠标悬停桌宠弹用量面板（Premium 月额度、智谱 5h/周/月 窗口、MFC 月/今日费用+tokens，带重置倒计时与模型 Top5）③删除问答链路（answer.rs / index.html / KB_TEST_ASK），Option+G 改呼出配置面板；用量后台 5min 轮询（KB_USAGE_POLL_SEC 可调）配置存 app_data_dir/usage.json |
 | v5.1 | 2026-09-25 | 胡嘉 | 修「鼠标放在桌宠上没有悬浮显示用量」：悬停触发从渲染层 DOM 事件搬到主进程——桌宠窗是 `focusable(false)`（设计上不许抢焦点），非 key 窗口的 WebView 命中测试不可靠：光标已经在宠物身上时窗口才出现、或窗口拿不到 key，就收不到 `mouseenter`；而 `mouseleave` 同样不来，enter/leave 配不上对即永久哑火（实测日志只有 1 次 hover-enter、0 次 show=true）。改由主进程按**全局光标**判定（那 120ms 轮询本来就为转头而跑）：「桌宠矩形 ∪ 面板矩形」进圈 350ms 弹出、出圈交给面板的 600ms 宽限（光标从桌宠挪到面板上不误判移开）；拖动中/松手 800ms 内、配置面板开着时让位（左键点桌宠 = 进配置，别在它脸上再叠一张）。pet.html 不再挂鼠标事件，pet shim 去掉 `hoverUsage`，`usage_hover` 命令删除；新增 `KB_USAGE_DEBUG` 逐 tick 打印光标与桌宠矩形 |
 | v5.2 | 2026-09-25 | 胡嘉 | Copilot 卡片改显示真实 **AI Credits**：2026-06-01 起 Copilot 转按量计费，旧的 `premium_request/usage` 账单接口对**组织分配的席位**（如 `bosch-copilot` 发的 Business 席位）返回 200 但 `usageItems` 为空 —— 卡片永远显示假的 `0/300`。改为走 Copilot 客户端同款内部接口 `GET api.github.com/copilot_internal/user`，读 `quota_snapshots.premium_interactions`（`entitlement` / `credits_used` / `remaining` / `percent_remaining`）。该接口**只认 OAuth token**（`gho_` / `ghu_`）：细粒度 PAT 401、Copilot 会话 token（`tid=…`）也 401。凭据按 **手填 token → pi 登录态（`~/.pi/agent/auth.json` 的 `github-copilot.refresh`）→ macOS 钥匙串 `copilot-cli`** 顺序自动发现，全找不到才退回旧账单接口；配置面板新增「凭据来源 + Token」两行，卡片加 `bosch-copilot 席位 · pi 登录态` 来源行与千分位数字 |
-
 | v5.3 | 2026-09-25 | 胡嘉 | 用量面板转极简：①**只显示已配置的账号**，没配置的卡片不占位（全空时给一行提示）②所有卡片**统一高度**（`.acct { min-height:64px }` 固定三段：头部 / 标尺 / 说明行），再也不会一张三行一张七行③Copilot 去掉「凭据来源」那行（`pi 登录态` 之类），只留 `剩 14,302（29%）· 4天后重置 · bosch-copilot`；模型 Top5 一并删掉④博世 MFC 只显示总金额 `¥102.55`，不再列今日/模型明细⑤窗口高度跟着卡片数收拢：渲染层算好内容高度上报 `usage_panel_height`，主进程缓存后**下次弹出前**改窗口尺寸（显示中只允许变高，变矮会把光标甩出悬停保持区）⑥`cursor_in_hover_zone` 改用窗口实际尺寸，不再拿写死的 `USAGE_H` 判命中 |
+| v5.4 | 2026-09-26 | 胡嘉 | Hook 接线加固：`install` 把 hook 脚本与 pi 桥**拷贝**到稳定目录 `~/.kapybara-buddy/`，三处全局配置（Antigravity / Claude Code / pi）只引用拷贝——项目搬家、改名、删除都不再让 hook 静默失效；`install-hooks.sh` 顺带接管 pi 扩展安装（拷贝替代软链，旧软链自动清理）；`status` 校验脚本路径存在性与版本漂移，悬空报「已失效，请重装」，并显示桌宠进程状态；卸载同时清稳定目录。`src-tauri/.cargo/config.toml` 删除写死的 `target-dir` 绝对路径，改由 `start.sh`/`start.bat` 注入 `CARGO_TARGET_DIR`（Windows 版本本就如此），他人克隆开箱可编译 |
 
 ## 链接
 - 无
@@ -155,10 +155,7 @@ cd ~/Desktop/Working/2026-09_kapybara-buddy
 ./agents/install-hooks.sh uninstall
 ```
 
-**pi 扩展安装**：
-```bash
-ln -sf ~/Desktop/Working/2026-09_kapybara-buddy/pi-extension/kapybara-bridge.ts ~/.pi/agent/extensions/kapybara-bridge.ts
-```
+**安装模型（v5.4 起）**：`install` 会把 hook 脚本与 pi 桥一并**拷贝**到稳定目录 `~/.kapybara-buddy/`，三处全局配置只引用该拷贝——项目目录此后搬家 / 改名都不影响已装的 hook。pi 扩展同样由脚本自动安装（拷贝进 `~/.pi/agent/extensions/`），**无需手工软链**（旧软链方案随项目搬家断链，已在 v5.4 废弃）。仓库内脚本更新后重跑一次 `install` 同步，`status` 会提示版本漂移。
 
 ### 多 Agent 并发与冲突仲裁机制
 
@@ -188,8 +185,8 @@ src-tauri/               Rust 主进程（Tauri v2）
 agents/                  Hook 脚本与集成工具
   antigravity/           Antigravity hook 脚本与 hooks.json
   claude/                Claude Code hook 脚本与配置片段
-  install-hooks.sh       一键安装/卸载/状态管理脚本
-pi-extension/            pi 扩展
+  install-hooks.sh       一键安装/卸载/状态管理脚本（把 hook 拷贝到 ~/.kapybara-buddy，全局配置只指向拷贝）
+pi-extension/            pi 扩展源码（install 时拷贝进 ~/.pi/agent/extensions）
 ```
 
 ## 配置
@@ -203,15 +200,10 @@ pi-extension/            pi 扩展
 
 注：v5.0 移除 `KB_BACKEND` / `KB_AGY_MODEL` / `KB_TEST_ASK` / `KB_TEST_ASK2`（问答功能已删）。窗口尺寸/热键等常量在 `src-tauri/src/main.rs` 与 `geom.rs` 顶部。
 
-## 本机构建注意（macOS）
+## 构建注意（macOS）
 
-这台机器的 CLT 是 2020 年的 Xcode 12（clang 12 / ld64-609），其链接产物会被 macOS 26 内核 AMFI 拒绝（rustc 加载 proc-macro 即被 SIGKILL "Code Signature Invalid"）。`src-tauri/.cargo/config.toml` 已改用 Homebrew LLVM/LLD 链接：
-
-```bash
-brew install llvm lld
-```
-
-另外编译产物目录已从项目内（~/Desktop，受 iCloud 同步管理）移到 `~/Library/Caches/kapybara-buddy-target`，避免 fileproviderd 动新鲜 dylib 的元数据触发同款误杀。
+- 原作者机器的 CLT 是 2020 年的 Xcode 12（clang 12 / ld64-609），链接产物会被新版 macOS 内核 AMFI 拒绝（rustc 加载 proc-macro 即被 SIGKILL "Code Signature Invalid"），当时用 Homebrew LLVM/LLD 绕路（`brew install llvm lld`，见 git 历史）。现行仓库 `src-tauri/.cargo/config.toml` **不含任何机器特定路径**，常规 Xcode CLT 工具链直接可编。
+- 编译产物目录通过 `CARGO_TARGET_DIR` 环境变量注入（`start.sh` 设 `~/Library/Caches/kapybara-buddy-target`，`start.bat` 设 `%LOCALAPPDATA%\kapybara-buddy-target`）：项目放在 OneDrive/iCloud 等同步目录时，新鲜 dylib 的元数据被 fileproviderd 动过可能触发 AMFI "Invalid Page" 误杀，产物放同步目录外最稳。不经启动脚本手动 `cargo build` 也能编（落到默认 `src-tauri/target`），只是有上述同步目录风险。
 
 ## 网络
 
