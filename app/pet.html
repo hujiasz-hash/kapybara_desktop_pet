@@ -151,22 +151,24 @@ function render() {
 }
 
 /* ---------- 鼠标朝向 + 空闲检测（主进程 120ms 推送全局光标） ---------- */
-window.buddy.onCursor(({ mx, my, px, py }) => {
+window.buddy.onCursor(({ mx, my, px, py, pw, ph, unitScale }) => {
   const moved = mx !== lastMouse.x || my !== lastMouse.y;
   lastMouse = { x: mx, y: my };
-  const cx = px + 55, cy = py + 55;                            // 桌宠中心
+  const s = Number(unitScale) || 1;                             // 桌面物理像素 / CSS 逻辑像素
+  const cx = px + (Number(pw) || 110 * s) / 2;
+  const cy = py + (Number(ph) || 110 * s) / 2;                  // 桌宠中心
   const dx = mx - cx, dy = my - cy;
   mouseDist = Math.round(Math.hypot(dx, dy));
-  mouseNear = mouseDist <= NEAR_R;                              // 鼠标是否在周边
+  mouseNear = mouseDist <= NEAR_R * s;                          // 屏幕物理缩放变化时保持同等视觉距离
   if (moved) {
     lastActivity = Date.now();
     if (drowsy) wake();                                        // 鼠标一动就醒
   }
   if (mode === 'idle' && !drowsy && !eventMode) {               // 朝向跟随
     let want = 'front';
-    if (dx < -20) want = 'left';          // 方向判定阈值 20px（原先 55/75，比 50px 触发圈还大，
-    else if (dx > 20) want = 'right';     // 导致凑近时只能显示正面，看不到它往哪边看）
-    else if (dy < -20) want = 'up';
+    if (dx < -20 * s) want = 'left';     // 方向阈值随桌面坐标单位缩放，视觉距离不变
+    else if (dx > 20 * s) want = 'right';
+    else if (dy < -20 * s) want = 'up';
     if (want !== look) { look = want; render(); }
   }
 });
@@ -350,7 +352,7 @@ document.addEventListener('mousedown', (e) => {
   down = { x: e.clientX, y: e.clientY };
   dragging = false;
   lastActivity = Date.now();
-  window.buddy.petDragStart(e.screenX, e.screenY);     // 主进程侧顺带收走用量面板
+  window.buddy.petDragStart();                         // 主进程读系统全局光标，坐标不依赖 WebView DPR
   try { document.body.setPointerCapture(e.pointerId); } catch (_) {}
 });
 function endDrag() {
@@ -370,7 +372,7 @@ document.addEventListener('mousemove', (e) => {
   const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
   if (dragging || moved > 5) {
     if (!dragging) { dragging = true; mode = 'dragged'; render(); }
-    window.buddy.petDragMove(e.screenX, e.screenY);
+    window.buddy.petDragMove();
   }
 });
 document.addEventListener('mouseup', (e) => {

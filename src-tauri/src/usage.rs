@@ -932,12 +932,10 @@ pub fn set_panel_height(app: &AppHandle, h: f64) {
 fn position_and_show(app: &AppHandle) {
     let Some(panel) = app.get_webview_window("usage") else { return };
     let Some(pet) = app.get_webview_window("pet") else { return };
-    let Ok(pos) = pet.outer_position() else { return };
-    let ps = geom::scale_at_phys(app, pos.x, pos.y);
-    let px = pos.x as f64 / ps;
-    let py = pos.y as f64 / ps;
+    let Some(pet_geo) = geom::window_geometry_desktop(&pet) else { return };
+    let pet_rect = pet_geo.rect;
 
-    // 先按上报的内容高度收拢窗口，再定位/显示（显示后再改会有跳变）
+    // 先按上报的逻辑高度收拢窗口，再定位/显示（显示后再改会有跳变）
     let want_h = {
         let h = PANEL_H.load(Ordering::Relaxed) as f64;
         if h >= PANEL_H_MIN { h } else { geom::USAGE_H }
@@ -949,22 +947,31 @@ fn position_and_show(app: &AppHandle) {
         .map(|s| s.height as f64 / panel.scale_factor().unwrap_or(1.0))
         .unwrap_or(want_h);
 
-    let Some(mon) = geom::monitor_at_css(app, px + 55.0, py + 55.0)
-        .or_else(|| app.primary_monitor().ok().flatten())
-    else {
+    let Some(mon) = geom::monitor_at_desktop(
+        app,
+        pet_rect.x + pet_rect.w / 2.0,
+        pet_rect.y + pet_rect.h / 2.0,
+    ) else {
         return;
     };
-    let wa = geom::work_area_css(&mon);
-    let ms = mon.scale_factor();
+    let wa = geom::work_area_desktop(&mon);
+    let unit = geom::logical_to_desktop(1.0, mon.scale_factor());
+    let panel_w = geom::logical_to_desktop(geom::USAGE_W, mon.scale_factor());
+    let panel_h = geom::logical_to_desktop(h, mon.scale_factor());
 
-    let mut x = px - geom::USAGE_W - 6.0; // 默认宠物左侧
-    if x < wa.x + 4.0 {
-        x = px + geom::PET_SIZE + 6.0; // 左边放不下放右侧
+    let mut x = pet_rect.x - panel_w - 6.0 * unit; // 默认宠物左侧
+    if x < wa.x + 4.0 * unit {
+        x = pet_rect.x + pet_rect.w + 6.0 * unit; // 左边放不下放右侧
     }
-    let y = (py - 40.0).max(wa.y + 4.0).min(wa.y + wa.h - h - 4.0);
-    let _ = panel.set_position(geom::to_phys(x, y, ms));
+    let y = (pet_rect.y - 40.0 * unit)
+        .max(wa.y + 4.0 * unit)
+        .min(wa.y + wa.h - panel_h - 4.0 * unit);
+    let _ = geom::set_position_desktop(&panel, x, y);
     let _ = panel.show();
-    println!("[usage] panel shown at ({:.0}, {:.0}) {:.0}x{:.0} mon_scale={}", x, y, geom::USAGE_W, h, ms);
+    println!(
+        "[usage] panel shown at ({:.0}, {:.0}) {:.0}x{:.0} desktopScale={:.2}",
+        x, y, panel_w, panel_h, unit
+    );
     // 显示瞬间推一次最新快照
     let _ = app.emit("usage-update", state_json(app));
 }
@@ -992,11 +999,14 @@ pub fn hover(app: &AppHandle, show: bool) {
 /// 悬停保持区外扩量（px）：贴到桌宠跟前就算命中，不必严格压在窗口矩形内
 const HOVER_PAD: f64 = 8.0;
 
-fn in_rect(x: f64, y: f64, rx: f64, ry: f64, rw: f64, rh: f64) -> bool {
-    x >= rx - HOVER_PAD && x <= rx + rw + HOVER_PAD && y >= ry - HOVER_PAD && y <= ry + rh + HOVER_PAD
+fn in_rect(x: f64, y: f64, rect: geom::DesktopRect, pad: f64) -> bool {
+    x >= rect.x - pad
+        && x <= rect.x + rect.w + pad
+        && y >= rect.y - pad
+        && y <= rect.y + rect.h + pad
 }
 
-/// 光标（全局 CSS px）是否落在「悬停保持区」内：桌宠矩形 ∪ 用量面板矩形（仅面板可见时）
+/// 原生全局光标是否落在「悬停保持区」内：桌宠矩形 ∪ 用量面板矩形（仅面板可见时）
 ///
 /// 悬停判定放在主进程，不用窗口的 mouseenter/mouseleave：桌宠窗是 focusable(false)
 /// （设计上不许抢焦点），非 key 窗口的 WebView 命中测试不可靠——光标已经在宠物身上时
@@ -1005,9 +1015,8 @@ fn in_rect(x: f64, y: f64, rx: f64, ry: f64, rw: f64, rh: f64) -> bool {
 /// 直接拿它做命中测试，顺带把「光标从桌宠挪到面板上」这段也一起覆盖了。
 pub fn cursor_in_hover_zone(app: &AppHandle, mx: f64, my: f64) -> bool {
     if let Some(pet) = app.get_webview_window("pet") {
-        if let Ok(p) = pet.outer_position() {
-            let s = geom::scale_at_phys(app, p.x, p.y);
-            if in_rect(mx, my, p.x as f64 / s, p.y as f64 / s, geom::PET_SIZE, geom::PET_SIZE) {
+        if let Some(geo) = geom::window_geometry_desktop(&pet) {
+            if in_rect(mx, my, geo.rect, HOVER_PAD * geo.logical_scale) {
                 return true;
             }
         }
@@ -1015,16 +1024,8 @@ pub fn cursor_in_hover_zone(app: &AppHandle, mx: f64, my: f64) -> bool {
     if let Some(panel) = app.get_webview_window("usage") {
         if panel.is_visible().unwrap_or(false) {
             // 用窗口实际尺寸：面板高度随账号数收拢，写死 USAGE_H 会多出一段"空气保持区"
-            if let (Ok(p), Ok(sz)) = (panel.outer_position(), panel.outer_size()) {
-                let s = geom::scale_at_phys(app, p.x, p.y);
-                if in_rect(
-                    mx,
-                    my,
-                    p.x as f64 / s,
-                    p.y as f64 / s,
-                    sz.width as f64 / s,
-                    sz.height as f64 / s,
-                ) {
+            if let Some(geo) = geom::window_geometry_desktop(&panel) {
+                if in_rect(mx, my, geo.rect, HOVER_PAD * geo.logical_scale) {
                     return true;
                 }
             }

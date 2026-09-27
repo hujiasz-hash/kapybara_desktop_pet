@@ -4,19 +4,24 @@ use serde_json::json;
 use tauri::{AppHandle, Manager};
 
 use crate::drag;
+use crate::geom;
 use crate::state::AppState;
 use crate::usage::{self, UsageConfig};
 
 #[tauri::command]
-pub fn pet_drag_start(app: AppHandle, sx: f64, sy: f64) {
-    // 拖动开始：悬停面板立即隐藏，避免挡视线
+pub fn pet_drag_start(app: AppHandle) {
+    // 拖动开始：悬停面板立即隐藏，坐标由主进程读取系统全局光标。
     usage::hide_now(&app);
-    drag::on_drag_start(&app, sx, sy);
+    if let Some((sx, sy)) = geom::cursor_desktop(&app) {
+        drag::on_drag_start(&app, sx, sy);
+    }
 }
 
 #[tauri::command]
-pub fn pet_drag_move(app: AppHandle, sx: f64, sy: f64) {
-    drag::on_drag_move(&app, sx, sy);
+pub fn pet_drag_move(app: AppHandle) {
+    if let Some((sx, sy)) = geom::cursor_desktop(&app) {
+        drag::on_drag_move(&app, sx, sy);
+    }
 }
 
 #[tauri::command]

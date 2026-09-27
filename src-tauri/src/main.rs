@@ -21,7 +21,7 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
-use state::{AppState, Limit};
+use state::AppState;
 
 const HOTKEY_LABEL: &str = "Option+G (mac) / Alt+G (Win)";
 
@@ -110,7 +110,7 @@ fn create_windows(app: &tauri::App) -> tauri::Result<()> {
     let wa = mon.work_area();
     let pet_x = wa.position.x as f64 / s + wa.size.width as f64 / s - 130.0;
     let pet_y = wa.position.y as f64 / s + 70.0;
-    let expected_x_phys = (pet_x * s).round() as i32;
+    let expected_x = geom::logical_to_desktop(pet_x, s);
 
     let pet = WebviewWindowBuilder::new(app, "pet", WebviewUrl::App("pet.html".into()))
         .title("kapybara-pet")
@@ -179,7 +179,7 @@ fn create_windows(app: &tauri::App) -> tauri::Result<()> {
         .build()?;
     usage_panel.set_visible_on_all_workspaces(true)?;
 
-    prelearn(app.handle().clone(), expected_x_phys);
+    drag::prelearn(app.handle().clone(), expected_x, geom::monitor_key(&mon));
     Ok(())
 }
 
@@ -193,25 +193,26 @@ pub fn toggle_config(app: &AppHandle) {
     }
     usage::hide_now(app); // 用量面板让位
 
-    let Ok(pos) = pet.outer_position() else { return };
-    let ps = geom::scale_at_phys(app, pos.x, pos.y);
-    let px = pos.x as f64 / ps;
-    let py = pos.y as f64 / ps;
-
-    let Some(mon) = geom::monitor_at_css(app, px + 55.0, py + 55.0)
-        .or_else(|| app.primary_monitor().ok().flatten())
-    else {
+    let Some(pet_geo) = geom::window_geometry_desktop(&pet) else { return };
+    let px = pet_geo.rect.x;
+    let py = pet_geo.rect.y;
+    let Some(mon) = geom::monitor_at_desktop(
+        app,
+        px + pet_geo.rect.w / 2.0,
+        py + pet_geo.rect.h / 2.0,
+    ) else {
         return;
     };
-    let wa = geom::work_area_css(&mon);
-    let ms = mon.scale_factor();
+    let wa = geom::work_area_desktop(&mon);
+    let unit = geom::logical_to_desktop(1.0, mon.scale_factor());
+    let config_w = geom::logical_to_desktop(geom::CONFIG_W, mon.scale_factor());
 
-    let mut x = px - geom::CONFIG_W - 6.0; // 默认宠物左侧
-    if x < wa.x + 4.0 {
-        x = px + geom::PET_SIZE + 6.0; // 左边放不下放右侧
+    let mut x = px - config_w - 6.0 * unit; // 默认宠物左侧
+    if x < wa.x + 4.0 * unit {
+        x = px + pet_geo.rect.w + 6.0 * unit; // 左边放不下放右侧
     }
-    let y = (wa.y + 4.0).max(py - 60.0);
-    let _ = config.set_position(geom::to_phys(x, y, ms));
+    let y = (wa.y + 4.0 * unit).max(py - 60.0 * unit);
+    let _ = geom::set_position_desktop(&config, x, y);
     let _ = config.show();
     let _ = config.set_focus();
     // 显示瞬间推一次最新快照，免得等下一轮轮询
@@ -226,15 +227,18 @@ fn start_cursor_loop(app: AppHandle) {
         loop {
             tokio::time::sleep(Duration::from_millis(120)).await;
             let Some(pet) = app.get_webview_window("pet") else { continue };
-            let (mx, my) = geom::cursor_css(&app);
-            let Ok(pos) = pet.outer_position() else { continue };
-            let s = geom::scale_at_phys(&app, pos.x, pos.y);
-            let px = pos.x as f64 / s;
-            let py = pos.y as f64 / s;
+            let Some((mx, my)) = geom::cursor_desktop(&app) else { continue };
+            let Some(pet_geo) = geom::window_geometry_desktop(&pet) else { continue };
+            let rect = pet_geo.rect;
             let _ = app.emit_to(
                 "pet",
                 "cursor",
-                serde_json::json!({ "mx": mx, "my": my, "px": px, "py": py }),
+                serde_json::json!({
+                    "mx": mx, "my": my,
+                    "px": rect.x, "py": rect.y,
+                    "pw": rect.w, "ph": rect.h,
+                    "unitScale": pet_geo.logical_scale
+                }),
             );
 
             hover_tick(&app, mx, my, &mut hover, verbose);
@@ -248,7 +252,11 @@ fn start_cursor_loop(app: AppHandle) {
                     .unwrap_or(false)
             };
             if stale {
-                let outside = mx < px - 50.0 || mx > px + 160.0 || my < py - 50.0 || my > py + 160.0;
+                let pad = 50.0 * pet_geo.logical_scale;
+                let outside = mx < rect.x - pad
+                    || mx > rect.x + rect.w + pad
+                    || my < rect.y - pad
+                    || my > rect.y + rect.h + pad;
                 if outside {
                     *st.drag.lock().unwrap() = None;
                     agent_event::pet_event(&app, "drag-lost", None);
@@ -293,20 +301,14 @@ fn hover_tick(app: &AppHandle, mx: f64, my: f64, hs: &mut HoverState, verbose: b
     let in_zone = usage::cursor_in_hover_zone(app, mx, my);
     if verbose {
         let rect = app.get_webview_window("pet").and_then(|p| {
-            let pos = p.outer_position().ok()?;
-            let s = geom::scale_at_phys(app, pos.x, pos.y);
+            let geo = geom::window_geometry_desktop(&p)?;
             Some(format!(
-                "pet 物理=({},{}) scale={} → CSS=({:.1},{:.1})+{}",
-                pos.x,
-                pos.y,
-                s,
-                pos.x as f64 / s,
-                pos.y as f64 / s,
-                geom::PET_SIZE
+                "pet 桌面=({:.0},{:.0})+{:.0}x{:.0} unitScale={:.2}",
+                geo.rect.x, geo.rect.y, geo.rect.w, geo.rect.h, geo.logical_scale
             ))
         });
         println!(
-            "[usage] tick 光标=({:.0},{:.0}) zone={} muted={} config={} {}",
+            "[usage] tick 桌面光标=({:.0},{:.0}) zone={} muted={} config={} {}",
             mx,
             my,
             in_zone,
@@ -331,19 +333,4 @@ fn hover_tick(app: &AppHandle, mx: f64, my: f64, hs: &mut HoverState, verbose: b
         println!("[usage] 悬停命中 光标=({:.0}, {:.0}) 判定用时={}ms", mx, my, since.elapsed().as_millis());
         usage::hover(app, true);
     }
-}
-
-/// 启动预学：初始位置若被系统弹回（台前调度条），用弹回结果学边界（README v2.4）
-fn prelearn(app: AppHandle, expected_x_phys: i32) {
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(400)).await;
-        let Some(pet) = app.get_webview_window("pet") else { return };
-        if let Ok(p) = pet.outer_position() {
-            if p.x < expected_x_phys - 5 {
-                *app.state::<AppState>().pet_limit.lock().unwrap() =
-                    Some(Limit { min_x: i32::MIN / 2, max_x: p.x });
-                println!("[kapybara-buddy] 台前调度右边界预学: maxX={}", p.x);
-            }
-        }
-    });
 }

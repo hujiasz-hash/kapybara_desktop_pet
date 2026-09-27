@@ -22,8 +22,8 @@ const PET_SHIM: &str = r#"(function () {
     });
   }
   window.buddy = {
-    petDragStart: function (sx, sy) { invokeLater('pet_drag_start', { sx: sx, sy: sy }); },
-    petDragMove: function (sx, sy) { invokeLater('pet_drag_move', { sx: sx, sy: sy }); },
+    petDragStart: function () { invokeLater('pet_drag_start', {}); },
+    petDragMove: function () { invokeLater('pet_drag_move', {}); },
     petDragEnd: function () { invokeLater('pet_drag_end', {}); },
     petClick: function () { invokeLater('pet_click', {}); },
     onCursor: function (cb) { listenEv('cursor', cb); },
