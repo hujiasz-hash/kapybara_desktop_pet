@@ -1,6 +1,6 @@
 [package]
 name = "kapybara-buddy"
-version = "5.0.0"
+version = "5.5.0"
 description = "卡皮巴拉桌宠 + 订阅用量悬浮面板（Copilot / 智谱 / 博世MFC，Tauri v2）"
 edition = "2021"
 

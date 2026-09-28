@@ -1015,9 +1015,13 @@ fn in_rect(x: f64, y: f64, rect: geom::DesktopRect, pad: f64) -> bool {
 /// 直接拿它做命中测试，顺带把「光标从桌宠挪到面板上」这段也一起覆盖了。
 pub fn cursor_in_hover_zone(app: &AppHandle, mx: f64, my: f64) -> bool {
     if let Some(pet) = app.get_webview_window("pet") {
-        if let Some(geo) = geom::window_geometry_desktop(&pet) {
-            if in_rect(mx, my, geo.rect, HOVER_PAD * geo.logical_scale) {
-                return true;
+        // v5.5：桌宠窗口被隐藏（关闭请求一律转 hide）后不再保留"幽灵悬停区"，
+        // 光标扫过原矩形不该弹出用量面板
+        if pet.is_visible().unwrap_or(true) {
+            if let Some(geo) = geom::window_geometry_desktop(&pet) {
+                if in_rect(mx, my, geo.rect, HOVER_PAD * geo.logical_scale) {
+                    return true;
+                }
             }
         }
     }

@@ -1,8 +1,8 @@
 ---
 title: kapybara-buddy 使用说明
-version: v4.1
+version: v5.5
 author: 胡嘉
-date: 2026-09-21
+date: 2026-09-28
 ---
 
 # kapybara-buddy 使用说明
@@ -59,6 +59,7 @@ date: 2026-09-21
 | v5.2 | 2026-09-25 | 胡嘉 | Copilot 卡片改显示真实 **AI Credits**：2026-06-01 起 Copilot 转按量计费，旧的 `premium_request/usage` 账单接口对**组织分配的席位**（如 `bosch-copilot` 发的 Business 席位）返回 200 但 `usageItems` 为空 —— 卡片永远显示假的 `0/300`。改为走 Copilot 客户端同款内部接口 `GET api.github.com/copilot_internal/user`，读 `quota_snapshots.premium_interactions`（`entitlement` / `credits_used` / `remaining` / `percent_remaining`）。该接口**只认 OAuth token**（`gho_` / `ghu_`）：细粒度 PAT 401、Copilot 会话 token（`tid=…`）也 401。凭据按 **手填 token → pi 登录态（`~/.pi/agent/auth.json` 的 `github-copilot.refresh`）→ macOS 钥匙串 `copilot-cli`** 顺序自动发现，全找不到才退回旧账单接口；配置面板新增「凭据来源 + Token」两行，卡片加 `bosch-copilot 席位 · pi 登录态` 来源行与千分位数字 |
 | v5.3 | 2026-09-25 | 胡嘉 | 用量面板转极简：①**只显示已配置的账号**，没配置的卡片不占位（全空时给一行提示）②所有卡片**统一高度**（`.acct { min-height:64px }` 固定三段：头部 / 标尺 / 说明行），再也不会一张三行一张七行③Copilot 去掉「凭据来源」那行（`pi 登录态` 之类），只留 `剩 14,302（29%）· 4天后重置 · bosch-copilot`；模型 Top5 一并删掉④博世 MFC 只显示总金额 `¥102.55`，不再列今日/模型明细⑤窗口高度跟着卡片数收拢：渲染层算好内容高度上报 `usage_panel_height`，主进程缓存后**下次弹出前**改窗口尺寸（显示中只允许变高，变矮会把光标甩出悬停保持区）⑥`cursor_in_hover_zone` 改用窗口实际尺寸，不再拿写死的 `USAGE_H` 判命中 |
 | v5.4 | 2026-09-26 | 胡嘉 | Hook 接线加固：`install` 把 hook 脚本与 pi 桥**拷贝**到稳定目录 `~/.kapybara-buddy/`，三处全局配置（Antigravity / Claude Code / pi）只引用拷贝——项目搬家、改名、删除都不再让 hook 静默失效；`install-hooks.sh` 顺带接管 pi 扩展安装（拷贝替代软链，旧软链自动清理）；`status` 校验脚本路径存在性与版本漂移，悬空报「已失效，请重装」，并显示桌宠进程状态；卸载同时清稳定目录。`src-tauri/.cargo/config.toml` 删除写死的 `target-dir` 绝对路径，改由 `start.sh`/`start.bat` 注入 `CARGO_TARGET_DIR`（Windows 版本本就如此），他人克隆开箱可编译 |
+| v5.5 | 2026-09-28 | 胡嘉 | 修「桌宠整夜空转」：主进程光标轮询原是不分场合的 120ms 恒拍——鼠标不动、零会话也每秒 8 次向 WKWebView `runJavaScriptInFrameInScriptWorld` 注 JS + 每次取一回 foreground activity 断言（实测 unified log 每分钟 2016 条），WebKit 全家整夜无法挂起（17 小时累计：主进程 17:51 / WebContent 6:40 / Networking 3:54）。修复两层：①**快照没变不推送**——光标、桌宠矩形、缩放全同则跳过 emit（渲染层本就按绝对坐标幂等重算，重复载荷是纯 no-op），静止时对外零 JS 注入；②**节奏自适应**——拖动中 / 光标在悬停区 / 用量面板可见 / 光标 2s 内动过 → 120ms 快拍，其余 → 500ms 慢拍。附带：`KB_USAGE_DEBUG` 逐 tick 日志加纪律（快拍逐条、慢拍 2s 心跳，此前曾一夜刷出 31 万行）；桌宠窗口被隐藏后不再保留"幽灵悬停区"；`CursorSnapshot.diff` 抽纯函数并配单测 |
 
 ## 链接
 - 无

@@ -219,49 +219,148 @@ pub fn toggle_config(app: &AppHandle) {
     let _ = app.emit("usage-update", usage::state_json(app));
 }
 
-/// 光标轮询：宠物朝向跟随（120ms）+ 悬停弹出用量面板 + 拖动泄漏兜底（对应主进程 setInterval）
+/// 光标轮询节奏（v5.5）
+/// - 快拍 120ms：朝向跟随 / 悬停 350ms 防抖 / 拖动 0.9s 泄漏兜底所需的时间分辨率
+/// - 慢拍 500ms：光标停住且离桌宠远——只为发现"鼠标又动了"。
+///   此前这里不分场合恒定 120ms：夜间无人操作也每秒 8 次往 WKWebView 灌 JS
+///   （emit_to 即一次 runJavaScriptInFrameInScriptWorld，且每次都取一回
+///   WebContent 的 foreground activity 断言，WebKit 整夜无法挂起、unified log
+///   每分钟刷 2000 条）
+const TICK_FAST: Duration = Duration::from_millis(120);
+const TICK_IDLE: Duration = Duration::from_millis(500);
+/// 光标停住后快拍的保持期：短暂停顿再动不应掉进慢拍
+const ACTIVITY_GRACE: Duration = Duration::from_secs(2);
+
+/// 推给渲染层的光标快照：光标位置 + 桌宠窗口矩形 + 缩放。
+/// 渲染层收到重复载荷是纯 no-op（全部按绝对坐标幂等重算），所以主进程只在
+/// 快照变化时才 emit——静止的光标不该把 WebKit 反复拽起来跑 JS。
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct CursorSnapshot {
+    mx: f64,
+    my: f64,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    scale: f64,
+}
+
+impl CursorSnapshot {
+    /// 是否值得再推一帧：任一字段变化超过半像素（亚像素抖动不算），或缩放变化。
+    fn diff(&self, o: &CursorSnapshot) -> bool {
+        const EPS: f64 = 0.5;
+        (self.mx - o.mx).abs() > EPS
+            || (self.my - o.my).abs() > EPS
+            || (self.x - o.x).abs() > EPS
+            || (self.y - o.y).abs() > EPS
+            || (self.w - o.w).abs() > EPS
+            || (self.h - o.h).abs() > EPS
+            || (self.scale - o.scale).abs() > 1e-6
+    }
+}
+
+/// 光标轮询：宠物朝向跟随 + 悬停弹出用量面板 + 拖动泄漏兜底
+///
+/// 两层收敛（v5.5）：
+/// 1. 快照没变不推送——光标、桌宠矩形、缩放与上次完全一致时跳过 emit；
+/// 2. 节奏自适应——拖动中 / 光标在悬停区 / 用量面板可见 / 光标近期动过 → 快拍；
+///    其余（鼠标停着且离桌宠远）→ 慢拍。整夜静止时对外零 JS 注入，
+///    主进程也只剩每秒 2 次本地光标读取，WebKit 可以真正挂起。
 fn start_cursor_loop(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut hover = HoverState::default();
         let verbose = std::env::var("KB_USAGE_DEBUG").is_ok();
+        let mut last_sent: Option<CursorSnapshot> = None; // 上次真正 emit 的快照
+        let mut last_cursor: Option<(f64, f64)> = None; // 上次读到的光标（判定"动过"）
+        let mut last_move_at = Instant::now();
+        let mut last_idle_log = Instant::now();
+        let mut fast = true; // 起步按快拍跑，首拍即把初始状态喂给渲染层
         loop {
-            tokio::time::sleep(Duration::from_millis(120)).await;
-            let Some(pet) = app.get_webview_window("pet") else { continue };
-            let Some((mx, my)) = geom::cursor_desktop(&app) else { continue };
-            let Some(pet_geo) = geom::window_geometry_desktop(&pet) else { continue };
+            tokio::time::sleep(if fast { TICK_FAST } else { TICK_IDLE }).await;
+            let Some(pet) = app.get_webview_window("pet") else { fast = false; continue };
+            let Some((mx, my)) = geom::cursor_desktop(&app) else { fast = false; continue };
+            let Some(pet_geo) = geom::window_geometry_desktop(&pet) else { fast = true; continue };
             let rect = pet_geo.rect;
-            let _ = app.emit_to(
-                "pet",
-                "cursor",
-                serde_json::json!({
-                    "mx": mx, "my": my,
-                    "px": rect.x, "py": rect.y,
-                    "pw": rect.w, "ph": rect.h,
-                    "unitScale": pet_geo.logical_scale
-                }),
-            );
+            let pet_visible = pet.is_visible().unwrap_or(true);
 
-            hover_tick(&app, mx, my, &mut hover, verbose);
+            // 光标位移超过半像素才算"动过"（渲染层同样按位移唤醒睡意，口径一致）
+            let moved = last_cursor
+                .map(|(lx, ly)| (mx - lx).abs() > 0.5 || (my - ly).abs() > 0.5)
+                .unwrap_or(true);
+            if moved {
+                last_move_at = Instant::now();
+            }
+            last_cursor = Some((mx, my));
+
+            // 快照变化才推；桌宠窗口被隐藏时也不必喂光标
+            let snap = CursorSnapshot {
+                mx,
+                my,
+                x: rect.x,
+                y: rect.y,
+                w: rect.w,
+                h: rect.h,
+                scale: pet_geo.logical_scale,
+            };
+            let changed = last_sent.map(|s| s.diff(&snap)).unwrap_or(true);
+            if changed && pet_visible {
+                last_sent = Some(snap);
+                let _ = app.emit_to(
+                    "pet",
+                    "cursor",
+                    serde_json::json!({
+                        "mx": mx, "my": my,
+                        "px": rect.x, "py": rect.y,
+                        "pw": rect.w, "ph": rect.h,
+                        "unitScale": pet_geo.logical_scale
+                    }),
+                );
+            }
+
+            // Debug 日志纪律：快拍逐条打，慢拍最多 2s 一条心跳
+            // （v5.1 排查悬停哑火时曾整夜开着 KB_USAGE_DEBUG，一晚刷出 31 万行 tick）
+            let log_tick = verbose
+                && (fast || {
+                    let due = last_idle_log.elapsed() >= Duration::from_secs(2);
+                    if due {
+                        last_idle_log = Instant::now();
+                    }
+                    due
+                });
+            let in_zone = hover_tick(&app, mx, my, &mut hover, log_tick);
 
             // 兜底：拖动 IPC 停滞 0.9s 且光标在窗口外（外扩 50px）→ mouseup 丢失，强制结束拖动
             let st = app.state::<AppState>();
-            let stale = {
-                let g = st.drag.lock().unwrap();
-                g.as_ref()
-                    .map(|d| d.last_move.elapsed() > Duration::from_millis(900))
-                    .unwrap_or(false)
-            };
-            if stale {
-                let pad = 50.0 * pet_geo.logical_scale;
-                let outside = mx < rect.x - pad
-                    || mx > rect.x + rect.w + pad
-                    || my < rect.y - pad
-                    || my > rect.y + rect.h + pad;
-                if outside {
-                    *st.drag.lock().unwrap() = None;
-                    agent_event::pet_event(&app, "drag-lost", None);
+            let drag_active = st.drag.lock().unwrap().is_some();
+            if drag_active {
+                let stale = {
+                    let g = st.drag.lock().unwrap();
+                    g.as_ref()
+                        .map(|d| d.last_move.elapsed() > Duration::from_millis(900))
+                        .unwrap_or(false)
+                };
+                if stale {
+                    let pad = 50.0 * pet_geo.logical_scale;
+                    let outside = mx < rect.x - pad
+                        || mx > rect.x + rect.w + pad
+                        || my < rect.y - pad
+                        || my > rect.y + rect.h + pad;
+                    if outside {
+                        *st.drag.lock().unwrap() = None;
+                        agent_event::pet_event(&app, "drag-lost", None);
+                    }
                 }
             }
+
+            // 下一拍节奏：有活干快拍，彻底闲置慢拍（隐藏的桌宠不需要跟光标）
+            let panel_visible = app
+                .get_webview_window("usage")
+                .map(|w| w.is_visible().unwrap_or(false))
+                .unwrap_or(false);
+            fast = drag_active
+                || in_zone
+                || panel_visible
+                || (pet_visible && last_move_at.elapsed() < ACTIVITY_GRACE);
         }
     });
 }
@@ -285,8 +384,10 @@ struct HoverState {
 /// 每 tick 判定一次悬停：进圈满 350ms 弹面板，出圈交给 usage::hover 的 600ms 宽限
 /// （光标从桌宠挪到面板上的那几像素空隙不会被误判成"移开"）
 ///
-/// `verbose`（KB_USAGE_DEBUG）逐 tick 打光标与桌宠矩形，排查"悬停哑火"用
-fn hover_tick(app: &AppHandle, mx: f64, my: f64, hs: &mut HoverState, verbose: bool) {
+/// 返回光标是否在悬停区内（主循环用它决定下一拍节奏）。
+/// `log_tick`（KB_USAGE_DEBUG）打光标与桌宠矩形，排查"悬停哑火"用——
+/// 只在快拍或慢拍心跳时打，静止时不再逐 tick 刷日志
+fn hover_tick(app: &AppHandle, mx: f64, my: f64, hs: &mut HoverState, log_tick: bool) -> bool {
     let st = app.state::<AppState>();
     if st.drag.lock().unwrap().is_some() {
         hs.last_drag_at = Some(Instant::now());
@@ -299,7 +400,7 @@ fn hover_tick(app: &AppHandle, mx: f64, my: f64, hs: &mut HoverState, verbose: b
         .unwrap_or(false);
 
     let in_zone = usage::cursor_in_hover_zone(app, mx, my);
-    if verbose {
+    if log_tick {
         let rect = app.get_webview_window("pet").and_then(|p| {
             let geo = geom::window_geometry_desktop(&p)?;
             Some(format!(
@@ -325,12 +426,47 @@ fn hover_tick(app: &AppHandle, mx: f64, my: f64, hs: &mut HoverState, verbose: b
             println!("[usage] 悬停离开 光标=({:.0}, {:.0})", mx, my);
             usage::hover(app, false);
         }
-        return;
+        return in_zone;
     }
     let since = *hs.inside_since.get_or_insert_with(Instant::now);
     if !hs.shown && since.elapsed() >= HOVER_DELAY {
         hs.shown = true;
         println!("[usage] 悬停命中 光标=({:.0}, {:.0}) 判定用时={}ms", mx, my, since.elapsed().as_millis());
         usage::hover(app, true);
+    }
+    in_zone
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn snap(mx: f64, my: f64, x: f64, y: f64, w: f64, h: f64, scale: f64) -> CursorSnapshot {
+        CursorSnapshot { mx, my, x, y, w, h, scale }
+    }
+
+    #[test]
+    fn identical_snapshots_are_not_re_emitted() {
+        let s = snap(100.0, 200.0, 10.0, 20.0, 110.0, 110.0, 1.0);
+        assert!(!s.diff(&s));
+    }
+
+    #[test]
+    fn subpixel_jitter_is_not_a_change() {
+        // 光标静止时 CGEvent 读数与窗口矩形不该有亚像素漂移，但万一有也不当变化
+        let a = snap(100.0, 200.0, 10.0, 20.0, 110.0, 110.0, 1.0);
+        let b = snap(100.3, 200.2, 10.1, 20.4, 110.2, 110.0, 1.0);
+        assert!(!a.diff(&b));
+    }
+
+    #[test]
+    fn real_changes_are_re_emitted() {
+        let a = snap(100.0, 200.0, 10.0, 20.0, 110.0, 110.0, 1.0);
+        // 光标动了 1px（渲染层要跟着转头/唤醒）
+        assert!(a.diff(&snap(101.0, 200.0, 10.0, 20.0, 110.0, 110.0, 1.0)));
+        // 桌宠被拖到别处（相对位置全变）
+        assert!(a.diff(&snap(100.0, 200.0, 12.0, 25.0, 110.0, 110.0, 1.0)));
+        // 跨屏缩放变化（朝向阈值按 unitScale 换算）
+        assert!(a.diff(&snap(100.0, 200.0, 10.0, 20.0, 110.0, 110.0, 1.25)));
     }
 }

@@ -1979,7 +1979,7 @@ dependencies = [
 
 [[package]]
 name = "kapybara-buddy"
-version = "5.0.0"
+version = "5.5.0"
 dependencies = [
  "chrono",
  "objc",
