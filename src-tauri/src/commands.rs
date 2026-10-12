@@ -101,3 +101,22 @@ pub fn hide_config(app: AppHandle) {
         let _ = w.hide();
     }
 }
+
+/// 退出桌宠（配置面板的「退出」按钮）
+///
+/// 窗口的 CloseRequested 一律被拦成 hide（常驻后台），所以退出必须走显式命令。
+/// 先隐藏所有窗口再 exit，避免退出瞬间在屏幕上留一帧残影。
+pub fn quit(app: &AppHandle) {
+    for label in ["config", "usage", "pet"] {
+        if let Some(w) = app.get_webview_window(label) {
+            let _ = w.hide();
+        }
+    }
+    println!("[kapybara-buddy] 用户从配置面板退出");
+    app.exit(0);
+}
+
+#[tauri::command]
+pub fn quit_app(app: AppHandle) {
+    quit(&app);
+}

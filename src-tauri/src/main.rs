@@ -45,6 +45,7 @@ fn main() {
             commands::usage_panel_hover,
             commands::usage_panel_height,
             commands::hide_config,
+            commands::quit_app,
         ])
         .setup(|app| {
             // 不进 Dock（对应 app.dock.hide()）

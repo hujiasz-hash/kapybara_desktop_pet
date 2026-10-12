@@ -52,6 +52,7 @@ const PANEL_SHIM: &str = r#"(function () {
     save: function (config) { return invokeLater('usage_save', { config: config }); },
     refresh: function () { invokeLater('usage_refresh', {}); },
     hide: function () { invokeLater('hide_config', {}); },
+    quit: function () { invokeLater('quit_app', {}); },
     panelHover: function (hovered) { invokeLater('usage_panel_hover', { hovered: !!hovered }); },
     panelHeight: function (h) { invokeLater('usage_panel_height', { h: h }); },
     onUsageUpdate: function (cb) { listenEv('usage-update', cb); },

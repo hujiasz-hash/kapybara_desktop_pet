@@ -18,6 +18,12 @@
           background: #4f8ef7; color: #fff; cursor: pointer; }
   #save:hover { background: #6aa0f8; }
   #save:disabled { opacity: 0.5; cursor: default; }
+  .head-actions { display: flex; align-items: center; gap: 6px; }
+  #quit { border: 1px solid rgba(224,108,96,0.45); border-radius: 8px; padding: 5px 12px;
+          font-size: 12.5px; font-weight: 600; background: transparent; color: #e06c60;
+          cursor: pointer; transition: 0.15s; white-space: nowrap; }
+  #quit:hover { background: rgba(224,108,96,0.14); border-color: #e06c60; }
+  #quit.armed { background: #e06c60; border-color: #e06c60; color: #fff; }
   #cards { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 2px; }
   #cards::-webkit-scrollbar { width: 0; }
   .card { background: rgba(255,255,255,0.055); border: 1px solid rgba(255,255,255,0.08);
@@ -57,7 +63,10 @@
       <h1><span class="logo">🦫</span>订阅用量配置</h1>
       <div class="hint">鼠标悬停桌宠查看用量 · 左键点桌宠打开本面板 · Esc 关闭</div>
     </div>
-    <button id="save">保存</button>
+    <div class="head-actions">
+      <button id="quit" title="退出桌宠（关闭 kapybara-buddy 进程）">退出</button>
+      <button id="save">保存</button>
+    </div>
   </header>
 
   <div id="cards">
@@ -273,6 +282,32 @@ $('save').addEventListener('click', async () => {
 });
 
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.buddy.hide(); });
+
+/* ---------- 退出桌宠（两步确认，防误触） ---------- */
+let quitTimer = null;
+function disarmQuit() {
+  clearTimeout(quitTimer);
+  quitTimer = null;
+  const b = $('quit');
+  b.classList.remove('armed');
+  b.textContent = '退出';
+}
+$('quit').addEventListener('click', () => {
+  const b = $('quit');
+  if (b.classList.contains('armed')) {          // 第二次点击：真退出
+    clearTimeout(quitTimer);
+    b.textContent = '退出中…';
+    b.disabled = true;
+    window.buddy.quit();
+    return;
+  }
+  b.classList.add('armed');                     // 第一次点击：进入待确认
+  b.textContent = '确认退出？';
+  quitTimer = setTimeout(disarmQuit, 3000);     // 3s 无后续操作自动撤销
+});
+// 面板被隐藏（Esc / 点外面 / 失焦）时撤销待确认态，下次打开是干净的
+window.addEventListener('blur', disarmQuit);
+document.addEventListener('visibilitychange', () => { if (document.hidden) disarmQuit(); });
 
 /* ---------- 初始化 + 用量事件更新 ---------- */
 function apply(payload, fillConfig) {
