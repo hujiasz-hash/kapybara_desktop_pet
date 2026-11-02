@@ -14,6 +14,7 @@ mod drag;
 mod geom;
 mod pievent;
 mod state;
+mod transcript_watch;
 mod usage;
 
 use std::time::{Duration, Instant};
@@ -58,6 +59,7 @@ fn main() {
             create_windows(app)?;
             start_cursor_loop(handle.clone());
             agent_event::start(handle.clone());
+            transcript_watch::start(handle.clone());
             usage::start(handle.clone());
 
             // 全局快捷键（系统级，无需辅助功能授权）

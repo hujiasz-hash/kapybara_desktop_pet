@@ -69,6 +69,11 @@ impl SessionTracker {
         });
     }
 
+    /// 查询某会话当前工作态（不存在返回 None）
+    pub fn state_of(&self, session_id: &str) -> Option<WorkState> {
+        self.sessions.get(session_id).map(|e| e.state)
+    }
+
     /// 更新会话状态并返回 (当前活跃会话数, 全局聚合工作态)
     pub fn update(
         &mut self,
@@ -391,6 +396,34 @@ fn on_agent_event(
         fallback
     );
 
+    pet_event_full(app, anim, None, fallback, active_count);
+}
+
+/// 会话日志监听（transcript_watch）的入口。
+/// 与 hook 通道共用同一个会话引擎；只有工作态真的变化时才驱动桌宠，
+/// 所以 hook 与日志同时到达同一状态时不会重复触发动画。
+pub fn transcript_event(app: &AppHandle, source: &str, session_id: &str, ev_norm: &'static str) {
+    let (active_count, fallback, changed) = {
+        let mut tracker = TRACKER.lock().unwrap();
+        let before = tracker.state_of(session_id);
+        let (n, fb) = tracker.update(session_id, source, ev_norm);
+        (n, fb, before != tracker.state_of(session_id))
+    };
+    if !changed {
+        return;
+    }
+    let Some(anim) = anim_for(ev_norm, Some(true)) else {
+        return;
+    };
+    println!(
+        "[kapybara-buddy] [watch:{}] 会话 {} -> {} => 动效 {} (活跃会话: {}, 聚合fallback: {:?})",
+        source,
+        truncate_id(session_id),
+        ev_norm,
+        anim,
+        active_count,
+        fallback
+    );
     pet_event_full(app, anim, None, fallback, active_count);
 }
 
